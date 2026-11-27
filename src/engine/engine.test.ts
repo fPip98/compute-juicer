@@ -5,7 +5,7 @@ import { FAULT_LIST, FAULT_REGISTRY } from '../data/faults';
 import { RELIC_LIST, RELIC_REGISTRY } from '../data/relics';
 import { KNOWLEDGE_BASE } from '../gdb/knowledgeBase';
 import { EN_CARD_META, EN_ENCOUNTER_META, EN_FAULT_META, EN_RELIC_META } from '../i18n';
-import { commitTurn, createCardInstance, initBattle, reorderStagedCard, stageCard } from './battle';
+import { applyOpsAction, commitTurn, createCardInstance, initBattle, reorderStagedCard, stageCard } from './battle';
 import { computeTelemetry, evaluateSla, stepThermal } from './physics';
 import { evaluatePipeline } from './pipeline';
 
@@ -100,7 +100,8 @@ describe('Pipeline Order-Dependent Synergies & Anti-Patterns', () => {
     const res = evaluatePipeline(state, [v4l2, int4, cache], CARD_REGISTRY);
     expect(res.preview.overdriveActive).toBe(true);
     expect(res.preview.distinctDomains.length).toBe(3);
-    expect(res.extraDraw).toBe(1);
+    // 2 PATCH cards (+1 each) + FULL-STACK OVERDRIVE (+1) = 3
+    expect(res.extraDraw).toBe(3);
     expect(res.trace.some((e) => e.kind === 'CHAIN_OVERDRIVE')).toBe(true);
   });
 });
@@ -145,6 +146,50 @@ describe('Battle State Machine, Watchdog & Content Integrity', () => {
     const staged = stageCard(wave2, faultInHand!.instanceId);
     const wave3 = commitTurn(staged, enc, CARD_REGISTRY, FAULT_REGISTRY, RELIC_REGISTRY, () => 0.5);
     expect(wave3.exhaustPile.some((c) => c.cardId === 'fault_card_tcp_hol')).toBe(true);
+  });
+
+  it('enforces 6-axis exclusive rack replacement (INT8 -> INT4 replaces instead of stacking)', () => {
+    const enc = ACT1_ENCOUNTERS[0];
+    let state = initBattle(enc, ['dep_smoothquant_int8', 'dep_int4_awq', 'cpp_cache_align', 'sil_pwm_fan', 'net_tcp_nodelay'], [], RELIC_REGISTRY, () => 0.5);
+    const int8 = state.hand.find((c) => c.cardId === 'dep_smoothquant_int8')!;
+    state = stageCard(state, int8.instanceId);
+    const wave2 = commitTurn(state, enc, CARD_REGISTRY, FAULT_REGISTRY, RELIC_REGISTRY, () => 0.5);
+    expect(wave2.rackSlots.QUANT).toBe('dep_smoothquant_int8');
+
+    // Now stage INT4 AWQ on the same QUANT axis -> replaces INT8 cleanly from initialMetrics
+    const int4 = createCardInstance('dep_int4_awq');
+    const evalRes = evaluatePipeline(wave2, [int4], CARD_REGISTRY);
+    expect(evalRes.preview.rackReplacements.length).toBe(1);
+    expect(evalRes.preview.rackReplacements[0]).toEqual({
+      axis: 'QUANT',
+      fromCardId: 'dep_smoothquant_int8',
+      toCardId: 'dep_int4_awq',
+    });
+    // Exact INT4 weights RAM = round(480 * 0.42) = 202 (NOT stacked 480 * 0.65 * 0.42 = 131!)
+    expect(evalRes.persistentMetrics.ramWeightsMB).toBe(Math.round(enc.baseMetrics.ramWeightsMB * 0.42));
+  });
+
+  it('enforces 78-85°C thermal hysteresis and OPS RESTART_SERVICE emergency recovery', () => {
+    const enc = ACT1_ENCOUNTERS[0];
+    const hotLatched = { ...enc.baseMetrics, tempC: 81.0, thermalThrottled: true };
+    // At 81°C (> 78°C release), must STAY throttled!
+    expect(computeTelemetry(hotLatched).isThermalThrottled).toBe(true);
+    // At 78°C (<= release), unlocks!
+    expect(computeTelemetry({ ...hotLatched, tempC: 78.0 }).isThermalThrottled).toBe(false);
+
+    // OPS RESTART_SERVICE clears leaks, TCP lock, thermal hysteresis, and costs 1 stability
+    const state = initBattle(enc, STARTER_DECK_IDS, [], RELIC_REGISTRY, () => 0.5);
+    state.baseMetrics.ramLeakedMB = 200;
+    state.baseMetrics.tempC = 90;
+    state.baseMetrics.thermalThrottled = true;
+    state.baseMetrics.flags['tcp_hol_locked'] = true;
+
+    const rebooted = applyOpsAction(state, 'RESTART_SERVICE', enc, RELIC_REGISTRY, () => 0.5);
+    expect(rebooted.stability).toBe(state.stability - 1);
+    expect(rebooted.baseMetrics.ramLeakedMB).toBe(0);
+    expect(rebooted.baseMetrics.thermalThrottled).toBe(false);
+    expect(rebooted.baseMetrics.flags['tcp_hol_locked']).toBe(false);
+    expect(rebooted.baseMetrics.tempC).toBeLessThanOrEqual(72);
   });
 
   it('ensures every card, relic, fault, and encounter has valid L1 KnowledgeEntry & EN i18n coverage', () => {

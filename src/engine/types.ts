@@ -8,6 +8,11 @@ export type Domain =
 
 export type CardType = 'PATCH' | 'RUNTIME' | 'FAULT';
 
+/** 6 mutually exclusive hardware/architecture rack axes — installing a new PATCH replaces the old one on that axis. */
+export type RackAxis = 'QUANT' | 'GRAPH' | 'MEMORY' | 'KERNEL' | 'BUS' | 'POLICY';
+
+export type OpsActionId = 'THROTTLE_DEGRADE' | 'RESTART_SERVICE';
+
 export type BottleneckState = 'MEMORY_BOUND' | 'COMPUTE_BOUND';
 
 export type RobotMood =
@@ -60,6 +65,8 @@ export interface SystemMetrics {
   shutdownTempC: number;
   powerW: number;
   coolingFactor: number;
+  /** Latched thermal throttle state (hysteresis: triggers at >= throttleTempC, releases only at <= throttleTempC - 7°C) */
+  thermalThrottled?: boolean;
 
   // Flags / Immunities granted by deployed patches or relics
   flags: Record<string, boolean>;
@@ -83,6 +90,7 @@ export interface ComputedTelemetry {
   isOom: boolean;
   isThermalThrottled: boolean;
   isThermalShutdown: boolean;
+  thermalReleaseTempC: number;
 
   accuracyClamped: number;
 }
@@ -163,6 +171,7 @@ export interface CardDef {
   summary: string;
   orderHint?: string;      // Hint about pipeline ordering / synergy
   knowledgeId: string;
+  rackAxis?: RackAxis;     // For PATCH cards: exclusive architecture rack slot (replaces prior PATCH on same axis)
   faultTag?: string;       // For FAULT cards that can be cleared by specific ops
   apply: (ctx: PipelineEvalContext) => CardApplyOutcome;
 }
@@ -241,6 +250,7 @@ export interface PipelinePreviewResult {
   distinctDomains: Domain[];
   overdriveActive: boolean;
   juiceGrade: JuiceGrade | null;
+  rackReplacements: Array<{ axis: RackAxis; fromCardId: string; toCardId: string }>;
 }
 
 export interface BattleState {
@@ -255,12 +265,17 @@ export interface BattleState {
   cycles: number;
   maxCycles: number;
 
-  baseMetrics: SystemMetrics;      // Metrics after persistent patches + accumulated thermal/leak
+  /** Clean baseline metrics after relics (before any rack PATCHes), used for exact slot recomputation */
+  initialMetrics: SystemMetrics;
+  baseMetrics: SystemMetrics;      // Metrics after rack PATCHes + accumulated thermal/leak
   effectiveSlaTarget: SlaTarget;
 
   relicIds: string[];
-  deployedPatchIds: string[];      // Persistent PATCH cards deployed in this encounter
+  /** Exclusive 6-axis architecture rack: axis -> mounted PATCH cardId */
+  rackSlots: Partial<Record<RackAxis, string>>;
+  deployedPatchIds: string[];      // Derived list of currently mounted PATCH card IDs
   watchdogAvailable: boolean;
+  opsUsedThisWave: OpsActionId | null;
 
   drawPile: CardInstance[];
   hand: CardInstance[];

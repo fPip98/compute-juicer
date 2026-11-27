@@ -148,14 +148,14 @@ export function LatencyTimeline({
     },
     {
       key: 'net',
-      labelZh: 'NET / 总线',
-      labelEn: 'NET / BUS',
-      color: '#10b981',
-      nowMs: Math.max(0, nowM.ioNetBusMs),
-      simMs: Math.max(0, simM.ioNetBusMs),
+      labelZh: activeM.flags['tcp_hol_locked'] ? 'NET 🔒≥7.5ms' : 'NET / 总线',
+      labelEn: activeM.flags['tcp_hol_locked'] ? 'NET 🔒≥7.5ms' : 'NET / BUS',
+      color: activeM.flags['tcp_hol_locked'] ? COLORS.estop : '#10b981',
+      nowMs: nowM.flags['tcp_hol_locked'] ? Math.max(7.5, Math.max(0, nowM.ioNetBusMs)) : Math.max(0, nowM.ioNetBusMs),
+      simMs: simM.flags['tcp_hol_locked'] ? Math.max(7.5, Math.max(0, simM.ioNetBusMs)) : Math.max(0, simM.ioNetBusMs),
       hintDomain: 'NETWORK',
-      hintText: 'NET/BUS',
-      knowledgeId: 'k_dds_shm',
+      hintText: activeM.flags['tcp_hol_locked'] ? '🔒 NET' : 'NET/BUS',
+      knowledgeId: 'k_tcp_nodelay',
     },
   ];
 

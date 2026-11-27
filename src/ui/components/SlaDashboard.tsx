@@ -385,6 +385,7 @@ export function SlaDashboard({
               min={25}
               max={105}
               markers={[
+                { key: 'rel', at: now.t.thermalReleaseTempC, color: COLORS.scope },
                 { key: 'thr', at: now.m.throttleTempC, color: COLORS.amber },
                 { key: 'off', at: now.m.shutdownTempC, color: COLORS.estop },
               ]}
@@ -392,11 +393,15 @@ export function SlaDashboard({
           }
           legend={
             <>
+              <L color={COLORS.scope} label="REL" value={`${fmt(now.t.thermalReleaseTempC, 0)}°`} />
               <L color={COLORS.amber} label="THR" value={`${fmt(now.m.throttleTempC, 0)}°`} />
               <L color={COLORS.estop} label="OFF" value={`${fmt(now.m.shutdownTempC, 0)}°`} />
-              <L color={COLORS.mute} label="PWR" value={`${fmt(now.m.powerW, 0)}W`} />
               <Status color={hot || (showSim && simHot) ? COLORS.estop : COLORS.mute}>
-                {hot ? 'THROTTLE −35%' : showSim && simHot ? 'SIM→THROTTLE' : 'NOMINAL'}
+                {hot
+                  ? tx(`锁频 ≤${fmt(now.t.thermalReleaseTempC, 0)}° 解锁`, `LOCKED ≤${fmt(now.t.thermalReleaseTempC, 0)}°`)
+                  : showSim && simHot
+                    ? 'SIM→THROTTLE'
+                    : 'NOMINAL'}
               </Status>
             </>
           }

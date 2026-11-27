@@ -7,6 +7,7 @@ import { FAULT_REGISTRY } from '../data/faults';
 import { PROFILE_REGISTRY, STARTER_PROFILES } from '../data/profiles';
 import { RELIC_LIST, RELIC_REGISTRY } from '../data/relics';
 import {
+  applyOpsAction,
   commitTurn,
   reorderStagedCard,
   stageCard,
@@ -32,7 +33,7 @@ import {
   startRunWithProfile,
   switchRunAct,
 } from '../engine/run';
-import { BattleState, EncounterDef, RunState } from '../engine/types';
+import { BattleState, EncounterDef, OpsActionId, RunState } from '../engine/types';
 import { loadLocale, Locale, saveLocale } from '../i18n';
 
 const RUN_POOLS: RunContentPools = {
@@ -249,6 +250,32 @@ export function useComputeGame() {
     );
   }, []);
 
+  const handleOpsAction = useCallback(
+    (actionId: OpsActionId) => {
+      if (!encounter || isExecuting) return;
+      if (actionId === 'RESTART_SERVICE') {
+        audioSynth.playRooflineShift();
+      } else {
+        audioSynth.playClick();
+      }
+      setHoveredCardId(null);
+      setRun((prev) =>
+        prev.activeBattle
+          ? {
+              ...prev,
+              activeBattle: applyOpsAction(
+                prev.activeBattle,
+                actionId,
+                encounter,
+                RELIC_REGISTRY,
+              ),
+            }
+          : prev,
+      );
+    },
+    [encounter, isExecuting],
+  );
+
   const handleCommit = useCallback(async () => {
     if (
       isExecuting ||
@@ -372,6 +399,7 @@ export function useComputeGame() {
     handleStageCard,
     handleUnstageCard,
     handleReorder,
+    handleOpsAction,
     handleCommit,
     // Global actions
     openGdb,

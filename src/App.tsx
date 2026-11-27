@@ -70,6 +70,7 @@ export default function App() {
     handleStageCard,
     handleUnstageCard,
     handleReorder,
+    handleOpsAction,
     handleCommit,
     openGdb,
     closeGdb,
@@ -179,6 +180,7 @@ export default function App() {
             onStage={handleStageCard}
             onUnstage={handleUnstageCard}
             onReorder={handleReorder}
+            onOpsAction={handleOpsAction}
             onCommit={() => void handleCommit()}
             onShowReport={reopenReport}
             onOpenKnowledge={openGdb}

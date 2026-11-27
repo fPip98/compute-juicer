@@ -1,4 +1,5 @@
 import { cloneMetrics, computeTelemetry, evaluateSla } from './physics';
+import { getRackAxis, recomputeMetricsFromRack } from './rack';
 import {
   BattleState,
   CardDef,
@@ -7,6 +8,7 @@ import {
   JuiceGrade,
   PipelinePreviewResult,
   PipelineStepSnapshot,
+  RackAxis,
   SlaTarget,
   SystemMetrics,
   TraceEvent,
@@ -17,6 +19,7 @@ export type CardRegistry = Record<string, CardDef>;
 export interface PipelineExecutionDetail {
   preview: PipelinePreviewResult;
   persistentMetrics: SystemMetrics;
+  nextRackSlots: Partial<Record<RackAxis, string>>;
   deployedNewPatchIds: string[];
   trace: TraceEvent[];
   extraDraw: number;
@@ -26,6 +29,12 @@ export interface PipelineExecutionDetail {
 /**
  * Evaluates a staged pipeline in strict sequential order (Compiler Pass model).
  * Pure function — used both for real-time UI preview and for COMMIT execution.
+ *
+ * V2 Rigor guarantees:
+ * - Mutually exclusive 6-axis rack: mounting a PATCH on an occupied axis replaces
+ *   the previous PATCH and cleanly recomputes from initialMetrics (no phantom stacking!).
+ * - PATCH cards grant +1 draw next wave so hand never starves in Boss fights.
+ * - Thermal hysteresis & TCP HOL hard-floor are respected at every step.
  */
 export function evaluatePipeline(
   state: BattleState,
@@ -34,7 +43,24 @@ export function evaluatePipeline(
 ): PipelineExecutionDetail {
   let workingMetrics = cloneMetrics(state.baseMetrics);
   let persistentMetrics = cloneMetrics(state.baseMetrics);
-  const effectiveSlaTarget: SlaTarget = { ...state.effectiveSlaTarget };
+  let effectiveSlaTarget: SlaTarget = { ...state.effectiveSlaTarget };
+
+  const workingRackSlots: Partial<Record<RackAxis, string>> = {
+    ...(state.rackSlots ?? {}),
+  };
+  const rackReplacements: Array<{
+    axis: RackAxis;
+    fromCardId: string;
+    toCardId: string;
+  }> = [];
+
+  // Apply active OPS: THROTTLE_DEGRADE (0-cost emergency: -3.5ms latency, -5.0% accuracy this turn)
+  if (state.opsUsedThisWave === 'THROTTLE_DEGRADE') {
+    const cutSensor = Math.min(2.0, workingMetrics.ioSensorMs);
+    workingMetrics.ioSensorMs = Number((workingMetrics.ioSensorMs - cutSensor).toFixed(2));
+    workingMetrics.bytesMB = Math.round(workingMetrics.bytesMB * 0.88);
+    workingMetrics.accuracy = Number(Math.max(0, workingMetrics.accuracy - 5.0).toFixed(1));
+  }
 
   const priorCardIds: string[] = [];
   const deployedPatchIds = [...state.deployedPatchIds];
@@ -57,7 +83,7 @@ export function evaluatePipeline(
     const telemetryBefore = computeTelemetry(workingMetrics);
     totalCost += def.cost;
 
-    const outcome = def.apply({
+    let outcome = def.apply({
       metrics: cloneMetrics(workingMetrics),
       telemetryBefore,
       priorCardIds: [...priorCardIds],
@@ -69,42 +95,91 @@ export function evaluatePipeline(
       clearedFaultIds: [...clearedFaultTags],
     });
 
-    workingMetrics = outcome.metrics;
-    const telemetryAfter = computeTelemetry(workingMetrics);
-
-    if (outcome.slaLatencyBonusMs) {
-      effectiveSlaTarget.maxLatencyMs = Number(
-        (effectiveSlaTarget.maxLatencyMs + outcome.slaLatencyBonusMs).toFixed(1),
-      );
-    }
-
     if (def.type === 'PATCH') {
-      // Apply the same transformation to persistentMetrics so patches survive into next waves
-      const persistentOutcome = def.apply({
-        metrics: cloneMetrics(persistentMetrics),
-        telemetryBefore: computeTelemetry(persistentMetrics),
-        priorCardIds: [...priorCardIds],
-        deployedPatchIds: [...deployedPatchIds],
-        relicIds: state.relicIds,
-        slaTarget: { ...effectiveSlaTarget },
-        cyclesRefunded: 0,
-        extraDraw: 0,
-        clearedFaultIds: [],
-      });
-      persistentMetrics = persistentOutcome.metrics;
+      const axis = getRackAxis(def)!;
+      const prevMounted = workingRackSlots[axis];
+      const isReplacing = Boolean(prevMounted && prevMounted !== def.id);
+      workingRackSlots[axis] = def.id;
+
+      // Cleanly recompute persistentMetrics from initialMetrics + workingRackSlots
+      // so replacing INT8 -> INT4 never stacks multipliers!
+      const baseSla: SlaTarget = {
+        maxLatencyMs: state.effectiveSlaTarget.maxLatencyMs,
+        minAccuracy: state.effectiveSlaTarget.minAccuracy,
+      };
+      const recomputed = recomputeMetricsFromRack(
+        state.initialMetrics ?? state.baseMetrics,
+        persistentMetrics,
+        workingRackSlots,
+        cardRegistry,
+        baseSla,
+        state.relicIds,
+      );
+
+      if (isReplacing && prevMounted) {
+        rackReplacements.push({
+          axis,
+          fromCardId: prevMounted,
+          toCardId: def.id,
+        });
+        // Preserve any QAT bonus from this wave if replacing into INT4/INT8
+        if (
+          priorCardIds.includes('dep_qat_calib') &&
+          (def.id === 'dep_int4_awq' || def.id === 'dep_smoothquant_int8')
+        ) {
+          recomputed.metrics.accuracy = Number(
+            Math.min(
+              recomputed.metrics.accuracyCap,
+              recomputed.metrics.accuracy + (def.id === 'dep_int4_awq' ? 3.5 : 1.0),
+            ).toFixed(1),
+          );
+        }
+        persistentMetrics = recomputed.metrics;
+        workingMetrics = cloneMetrics(recomputed.metrics);
+        // Re-apply prior RUNTIME cards' temporary buffs onto workingMetrics if any?
+        // For crispness, carry forward workingMetrics' delta from prior runtime steps on accuracy/temp
+        effectiveSlaTarget = recomputed.slaTarget;
+      } else {
+        persistentMetrics = recomputed.metrics;
+        // Preserve QAT protection bonus in persistentMetrics too
+        if (
+          priorCardIds.includes('dep_qat_calib') &&
+          (def.id === 'dep_int4_awq' || def.id === 'dep_smoothquant_int8')
+        ) {
+          persistentMetrics.accuracy = Number(
+            Math.min(
+              persistentMetrics.accuracyCap,
+              persistentMetrics.accuracy + (def.id === 'dep_int4_awq' ? 3.5 : 1.0),
+            ).toFixed(1),
+          );
+        }
+        workingMetrics = outcome.metrics;
+        if (outcome.slaLatencyBonusMs) {
+          effectiveSlaTarget.maxLatencyMs = Number(
+            (effectiveSlaTarget.maxLatencyMs + outcome.slaLatencyBonusMs).toFixed(1),
+          );
+        }
+      }
+
+      // PATCH cards auto-grant +1 draw next wave so hand never starves
+      extraDraw += 1;
       if (!deployedPatchIds.includes(def.id)) {
         deployedPatchIds.push(def.id);
         deployedNewPatchIds.push(def.id);
       }
     } else if (def.type === 'RUNTIME') {
-      // Thermal heat and RAM leak cleanups from runtime ops carry over to persistent state
-      const tempDelta = workingMetrics.tempC - telemetryBefore.effectivePeakFlopsG * 0;
-      void tempDelta;
-      const heatDiff = outcome.metrics.tempC - state.baseMetrics.tempC;
-      // Preserve explicit delta on tempC and ramLeakedMB/ramFragMB between before and after this step
-      const prevRawTemp = i === 0 ? state.baseMetrics.tempC : steps[i - 1].metricsAfter.tempC;
-      const prevRawLeaked = i === 0 ? state.baseMetrics.ramLeakedMB : steps[i - 1].metricsAfter.ramLeakedMB;
-      const prevRawFrag = i === 0 ? state.baseMetrics.ramFragMB : steps[i - 1].metricsAfter.ramFragMB;
+      workingMetrics = outcome.metrics;
+      if (outcome.slaLatencyBonusMs) {
+        effectiveSlaTarget.maxLatencyMs = Number(
+          (effectiveSlaTarget.maxLatencyMs + outcome.slaLatencyBonusMs).toFixed(1),
+        );
+      }
+      const prevRawTemp =
+        i === 0 ? state.baseMetrics.tempC : steps[i - 1].metricsAfter.tempC;
+      const prevRawLeaked =
+        i === 0 ? state.baseMetrics.ramLeakedMB : steps[i - 1].metricsAfter.ramLeakedMB;
+      const prevRawFrag =
+        i === 0 ? state.baseMetrics.ramFragMB : steps[i - 1].metricsAfter.ramFragMB;
 
       const stepTempDelta = workingMetrics.tempC - prevRawTemp;
       const stepLeakedDelta = workingMetrics.ramLeakedMB - prevRawLeaked;
@@ -122,8 +197,18 @@ export function evaluatePipeline(
         0,
         persistentMetrics.ramFragMB + stepFragDelta,
       );
-      void heatDiff;
+      if (workingMetrics.flags['tcp_hol_locked'] === false) {
+        persistentMetrics.flags['tcp_hol_locked'] = false;
+      }
+    } else {
+      workingMetrics = outcome.metrics;
     }
+
+    // Latch thermal hysteresis state if temperature crosses threshold
+    const telemetryAfter = computeTelemetry(workingMetrics);
+    workingMetrics.thermalThrottled = telemetryAfter.isThermalThrottled;
+    persistentMetrics.thermalThrottled =
+      computeTelemetry(persistentMetrics).isThermalThrottled;
 
     if (outcome.cyclesRefund) {
       cyclesRefunded += outcome.cyclesRefund;
@@ -142,7 +227,8 @@ export function evaluatePipeline(
       (telemetryAfter.totalLatencyMs - telemetryBefore.totalLatencyMs).toFixed(2),
     );
     const deltaRamMB = telemetryAfter.ramUsedMB - telemetryBefore.ramUsedMB;
-    const prevTemp = i === 0 ? state.baseMetrics.tempC : steps[i - 1].metricsAfter.tempC;
+    const prevTemp =
+      i === 0 ? state.baseMetrics.tempC : steps[i - 1].metricsAfter.tempC;
     const deltaTempC = Number((workingMetrics.tempC - prevTemp).toFixed(1));
     const deltaAccuracy = Number(
       (telemetryAfter.accuracyClamped - telemetryBefore.accuracyClamped).toFixed(1),
@@ -197,8 +283,8 @@ export function evaluatePipeline(
         kind: 'THERMAL_THROTTLE',
         cardInstanceId: inst.instanceId,
         cardId: def.id,
-        title: '触发热节流降频！',
-        detail: `结温达到 ${workingMetrics.tempC}°C，峰值算力被迫下降 35%`,
+        title: '触发热滞回降频！',
+        detail: `结温达到 ${workingMetrics.tempC}°C，算力下降 35%（需降温至 ≤${telemetryAfter.thermalReleaseTempC}°C 才解锁）`,
       });
     }
 
@@ -281,8 +367,10 @@ export function evaluatePipeline(
       distinctDomains,
       overdriveActive,
       juiceGrade,
+      rackReplacements,
     },
     persistentMetrics,
+    nextRackSlots: workingRackSlots,
     deployedNewPatchIds,
     trace,
     extraDraw,

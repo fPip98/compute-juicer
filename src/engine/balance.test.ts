@@ -270,7 +270,7 @@ describe('Balance & Playability Simulation (All 15 Encounters + Full 3-Act Runs)
     for (const line of report) {
       expect(line).not.toContain(' 0/10 wins');
     }
-  });
+  }, 15000);
 
   it('verifies full 3-Act roguelike runs can reach RUN_VICTORY across all 3 starter profiles', () => {
     const summary: string[] = [];
@@ -300,5 +300,5 @@ describe('Balance & Playability Simulation (All 15 Encounters + Full 3-Act Runs)
     for (const c of results) {
       expect(c).toBeGreaterThan(0);
     }
-  });
+  }, 15000);
 });

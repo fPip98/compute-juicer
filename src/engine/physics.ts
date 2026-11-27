@@ -8,6 +8,7 @@ import {
 } from './types';
 
 export const THERMAL_THROTTLE_FACTOR = 0.65; // -35% peak compute under thermal throttling
+export const THERMAL_HYSTERESIS_C = 7.0;     // Must cool 7°C below throttleTempC (e.g. 85->78°C) to unlock
 
 export function cloneMetrics(m: SystemMetrics): SystemMetrics {
   return {
@@ -17,7 +18,7 @@ export function cloneMetrics(m: SystemMetrics): SystemMetrics {
 }
 
 /**
- * Pure SI-aligned Roofline + End-to-End Latency + RAM + Thermal evaluator.
+ * Pure SI-aligned Roofline + End-to-End Latency + RAM + Thermal Hysteresis evaluator.
  *
  * Units check:
  * - flopsG (GFLOPs) / effectivePeakFlopsG (GFLOPs/s) * 1000 = ms
@@ -26,7 +27,13 @@ export function cloneMetrics(m: SystemMetrics): SystemMetrics {
  * - ridgePoint = effectivePeakFlopsG / bandwidthGBs = FLOPs / Byte
  */
 export function computeTelemetry(m: SystemMetrics): ComputedTelemetry {
-  const isThermalThrottled = m.tempC >= m.throttleTempC;
+  const thermalReleaseTempC = round1(m.throttleTempC - THERMAL_HYSTERESIS_C);
+  // Real hardware thermal hysteresis:
+  // - Triggers when tempC >= throttleTempC (85°C)
+  // - Stays latched while tempC > thermalReleaseTempC (78°C) if previously throttled
+  const isThermalThrottled =
+    m.tempC >= m.throttleTempC ||
+    (Boolean(m.thermalThrottled) && m.tempC > thermalReleaseTempC);
   const isThermalShutdown = m.tempC >= m.shutdownTempC;
 
   const effectivePeakFlopsG = Math.max(
@@ -46,10 +53,11 @@ export function computeTelemetry(m: SystemMetrics): ComputedTelemetry {
   const bottleneck: BottleneckState =
     memoryMs > computeMs ? 'MEMORY_BOUND' : 'COMPUTE_BOUND';
 
+  const ioNetEffective = m.flags['tcp_hol_locked']
+    ? Math.max(7.5, Math.max(0, m.ioNetBusMs))
+    : Math.max(0, m.ioNetBusMs);
   const ioTotalMs =
-    Math.max(0, m.ioSensorMs) +
-    Math.max(0, m.ioNetBusMs) +
-    Math.max(0, m.ioCopyMs);
+    Math.max(0, m.ioSensorMs) + ioNetEffective + Math.max(0, m.ioCopyMs);
   const osTotalMs = Math.max(0, m.osBaseMs) + Math.max(0, m.osJitterMs);
   const totalLatencyMs = round2(ioTotalMs + rooflineMs + osTotalMs);
 
@@ -83,6 +91,7 @@ export function computeTelemetry(m: SystemMetrics): ComputedTelemetry {
     isOom,
     isThermalThrottled,
     isThermalShutdown,
+    thermalReleaseTempC,
     accuracyClamped,
   };
 }
@@ -101,6 +110,10 @@ export function stepThermal(m: SystemMetrics): SystemMetrics {
   next.tempC = round1(
     Math.max(next.ambientTempC, next.tempC + heatGain - heatDissipation),
   );
+  const releaseC = next.throttleTempC - THERMAL_HYSTERESIS_C;
+  next.thermalThrottled =
+    next.tempC >= next.throttleTempC ||
+    (Boolean(m.thermalThrottled) && next.tempC > releaseC);
   return next;
 }
 

@@ -71,21 +71,26 @@ export const FAULT_LIST: FaultDef[] = [
     domain: 'NETWORK',
     severity: 'WARNING',
     icon: 'WifiOff',
-    intentText: '网络延迟 +4.5ms 并塞入脏卡（TCP_NODELAY / 共享内存可挡）',
+    intentText: '锁死网络延迟 ≥7.5ms 并塞入脏卡（TCP_NODELAY / 共享内存 / UDP+FEC 可解）',
     knowledgeId: 'k_tcp_nodelay',
     injectFaultCardId: 'fault_card_tcp_hol',
     apply: (m) => {
-      if (m.flags['dds_shm'] || m.flags['tcp_nodelay_active']) {
+      if (m.flags['dds_shm'] || m.flags['tcp_nodelay_active'] || m.flags['xdp_bypass']) {
         return {
           metrics: m,
-          logDetail: '零拷贝共享内存/TCP_NODELAY 规避了协议栈队头阻塞',
-          blockedBy: m.flags['dds_shm'] ? 'ROS2 Iceoryx 共享内存' : 'TCP_NODELAY',
+          logDetail: '零拷贝共享内存/TCP_NODELAY/XDP 规避了协议栈队头阻塞',
+          blockedBy: m.flags['dds_shm']
+            ? 'ROS2 Iceoryx 共享内存'
+            : m.flags['xdp_bypass']
+              ? 'eBPF/XDP 内核旁路'
+              : 'TCP_NODELAY',
         };
       }
-      m.ioNetBusMs = Number((m.ioNetBusMs + 4.5).toFixed(2));
+      m.ioNetBusMs = Number((m.ioNetBusMs + 3.5).toFixed(2));
+      m.flags['tcp_hol_locked'] = true;
       return {
         metrics: m,
-        logDetail: 'Nagle 算法与弱网重传触发队头阻塞，通信延迟 +4.5ms！',
+        logDetail: 'TCP 队头阻塞触发硬延迟下限（网络段锁死 ≥7.5ms），需用网络解牌或重启服务解除！',
       };
     },
   },

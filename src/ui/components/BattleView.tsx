@@ -1,4 +1,4 @@
-import { BattleState, ComputedTelemetry, EncounterDef, PipelinePreviewResult, RobotMood } from '../../engine/types';
+import { BattleState, ComputedTelemetry, EncounterDef, OpsActionId, PipelinePreviewResult, RobotMood } from '../../engine/types';
 import { HandTray } from './HandTray';
 import { LatencyTimeline } from './LatencyTimeline';
 import { PipelineBay } from './PipelineBay';
@@ -22,6 +22,7 @@ export interface BattleViewProps {
   onStage: (instanceId: string) => void;
   onUnstage: (instanceId: string) => void;
   onReorder: (from: number, to: number) => void;
+  onOpsAction: (actionId: OpsActionId) => void;
   onCommit: () => void;
   onShowReport: () => void;
   onOpenKnowledge: (id: string) => void;
@@ -44,6 +45,7 @@ export function BattleView({
   onStage,
   onUnstage,
   onReorder,
+  onOpsAction,
   onCommit,
   onShowReport,
   onOpenKnowledge,
@@ -117,6 +119,7 @@ export function BattleView({
             onShowReport={onShowReport}
             onUnstage={onUnstage}
             onReorder={onReorder}
+            onOpsAction={onOpsAction}
             onCommit={onCommit}
             onOpenKnowledge={onOpenKnowledge}
           />

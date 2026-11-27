@@ -339,6 +339,7 @@ export const CARD_LIST: CardDef[] = [
       m.ioNetBusMs = Number(Math.max(0.5, m.ioNetBusMs - 3.8).toFixed(2));
       m.ramBuffersMB += 55;
       m.flags['dds_shm'] = true;
+      m.flags['tcp_hol_locked'] = false;
       return { metrics: m };
     },
   },
@@ -357,6 +358,7 @@ export const CARD_LIST: CardDef[] = [
       const m = ctx.metrics;
       m.ioNetBusMs = Number(Math.max(0.4, m.ioNetBusMs - 3.0).toFixed(2));
       m.flags['tcp_nodelay_active'] = true;
+      m.flags['tcp_hol_locked'] = false;
       return {
         metrics: m,
         clearFaultTag: 'tcp_hol',
@@ -452,6 +454,7 @@ export const CARD_LIST: CardDef[] = [
       const m = ctx.metrics;
       m.ioNetBusMs = Number(Math.max(0.4, m.ioNetBusMs - 2.6).toFixed(2));
       m.accuracy = Number(Math.min(m.accuracyCap, m.accuracy + 2.5).toFixed(1));
+      m.flags['tcp_hol_locked'] = false;
       return { metrics: m, clearFaultTag: 'tcp_hol' };
     },
   },

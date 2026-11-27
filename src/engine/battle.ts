@@ -5,6 +5,7 @@ import {
   CardInstance,
   EncounterDef,
   FaultDef,
+  OpsActionId,
   RelicDef,
   TraceEvent,
 } from './types';
@@ -13,6 +14,34 @@ export type RelicRegistry = Record<string, RelicDef>;
 export type FaultRegistry = Record<string, FaultDef>;
 
 const HAND_SIZE = 5;
+
+/** Counter cards guaranteed to be surfaced if present in drawPile when matching fault is telegraphed */
+const FAULT_COUNTERS: Record<string, string[]> = {
+  fault_tcp_hol: ['net_tcp_nodelay', 'net_udp_fec', 'net_iceoryx_shm', 'net_xdp_bypass'],
+  fault_thermal_wave: ['sil_pwm_fan', 'sil_clock_gating', 'sil_liquid_metal'],
+  fault_mem_frag_leak: ['ker_cgroup_reclaim', 'cpp_arena_pool'],
+  fault_irq_storm: ['ker_threaded_irq', 'ker_preempt_rt'],
+  fault_logrotate_preempt: ['ker_preempt_rt', 'ker_rcu_lockless'],
+  fault_weak_net_loss: ['net_tsn_gate', 'net_udp_fec'],
+};
+
+function surfaceCounterCard(
+  drawPile: CardInstance[],
+  upcomingFaultIds: string[],
+): CardInstance[] {
+  if (upcomingFaultIds.length === 0 || drawPile.length === 0) return drawPile;
+  const counterIds = new Set<string>();
+  for (const fid of upcomingFaultIds) {
+    for (const cid of FAULT_COUNTERS[fid] ?? []) counterIds.add(cid);
+  }
+  if (counterIds.size === 0) return drawPile;
+  const idx = drawPile.findIndex((c) => counterIds.has(c.cardId));
+  if (idx < 0 || idx === drawPile.length - 1) return drawPile;
+  const next = [...drawPile];
+  const [found] = next.splice(idx, 1);
+  next.push(found); // pop() draws from end of array
+  return next;
+}
 
 let nextInstanceSeq = 1;
 export function createCardInstance(cardId: string): CardInstance {
@@ -94,11 +123,14 @@ export function initBattle(
     maxStability,
     cycles: 3,
     maxCycles: 3,
+    initialMetrics: cloneMetrics(baseMetrics),
     baseMetrics,
     effectiveSlaTarget: { ...encounter.slaTarget },
     relicIds: [...relicIds],
+    rackSlots: {},
     deployedPatchIds: [],
     watchdogAvailable: relicIds.includes('relic_watchdog'),
+    opsUsedThisWave: null,
     drawPile,
     hand: drawn,
     stagedPipeline: [],
@@ -208,11 +240,14 @@ export function commitTurn(
     const faultResult = fault.apply(cloneMetrics(turnMetrics));
     turnMetrics = faultResult.metrics;
 
-    // Also persist leak/fragmentation/temp shocks into persistentMetrics
+    // Also persist leak/fragmentation/temp shocks & hard TCP lock into persistentMetrics
     const persResult = fault.apply(cloneMetrics(persistentMetrics));
     persistentMetrics.ramLeakedMB = persResult.metrics.ramLeakedMB;
     persistentMetrics.ramFragMB = persResult.metrics.ramFragMB;
     persistentMetrics.tempC = persResult.metrics.tempC;
+    if (persResult.metrics.flags['tcp_hol_locked']) {
+      persistentMetrics.flags['tcp_hol_locked'] = true;
+    }
 
     trace.push({
       kind: 'FAULT_HIT',
@@ -314,18 +349,20 @@ export function commitTurn(
         persistentMetrics = relic.onTurnStart(cloneMetrics(persistentMetrics), nextWave);
       }
     }
-    // Place newly injected FAULT cards onto the top of drawPile so players actually face them next wave
-    const drawWithFaults = [...drawPile, ...injectedFaultCards];
+    // Place newly injected FAULT cards + targeted counter card guarantee onto top of drawPile
+    const nextUpcomingFaults = encounter.waveFaultSchedule[nextWave - 1] ?? [];
+    const surfacedDraw = surfaceCounterCard(drawPile, nextUpcomingFaults);
+    const drawWithFaults = [...surfacedDraw, ...injectedFaultCards];
     const drawRes = drawCards(
       drawWithFaults,
       discardPile,
-      HAND_SIZE + evalDetail.extraDraw,
+      Math.min(7, HAND_SIZE + evalDetail.extraDraw),
       rng,
     );
     hand = drawRes.drawn;
     drawPile = drawRes.drawPile;
     discardPile = drawRes.discardPile;
-    upcomingFaultIds = encounter.waveFaultSchedule[nextWave - 1] ?? [];
+    upcomingFaultIds = nextUpcomingFaults;
   }
 
   return {
@@ -336,11 +373,12 @@ export function commitTurn(
     cycles: state.maxCycles,
     baseMetrics: persistentMetrics,
     effectiveSlaTarget,
-    deployedPatchIds: [
-      ...state.deployedPatchIds,
-      ...evalDetail.deployedNewPatchIds,
-    ],
+    rackSlots: evalDetail.nextRackSlots,
+    deployedPatchIds: Object.values(evalDetail.nextRackSlots).filter(
+      (id): id is string => Boolean(id),
+    ),
     watchdogAvailable,
+    opsUsedThisWave: null,
     drawPile,
     hand,
     stagedPipeline: [],
@@ -349,6 +387,98 @@ export function commitTurn(
     upcomingFaultIds,
     lastTurnTrace: trace,
     robotMood: status === 'VICTORY' ? 'VICTORY' : slaEval.robotMood,
+    status,
+    defeatReason,
+  };
+}
+
+/**
+ * Permanent OPS emergency fallback actions — ensures players are never soft-locked by RNG.
+ * - THROTTLE_DEGRADE: 0-cost emergency frame-drop (-3.5ms latency, -5% accuracy this wave).
+ * - RESTART_SERVICE: Purges all RAM leaks, fragmentation, TCP lock & cools -18°C (breaks thermal hysteresis),
+ *   at the explicit cost of failing this wave's SLA (stability -1) and advancing to next wave.
+ */
+export function applyOpsAction(
+  state: BattleState,
+  actionId: OpsActionId,
+  encounter: EncounterDef,
+  relicRegistry: RelicRegistry,
+  rng: () => number = Math.random,
+): BattleState {
+  if (state.status !== 'PLANNING' || state.opsUsedThisWave !== null) return state;
+
+  if (actionId === 'THROTTLE_DEGRADE') {
+    return {
+      ...state,
+      opsUsedThisWave: 'THROTTLE_DEGRADE',
+    };
+  }
+
+  // RESTART_SERVICE: clean reboot of inference daemon; costs 1 stability & skips this wave's SLA pass
+  const rebooted = cloneMetrics(state.baseMetrics);
+  rebooted.ramLeakedMB = 0;
+  rebooted.ramFragMB = 0;
+  rebooted.flags['tcp_hol_locked'] = false;
+  rebooted.tempC = Math.max(
+    rebooted.ambientTempC,
+    Number((rebooted.tempC - 18).toFixed(1)),
+  );
+  rebooted.thermalThrottled = false;
+
+  const stability = state.stability - 1;
+  const nextWave = state.wave + 1;
+  let status: BattleState['status'] = 'PLANNING';
+  let defeatReason: string | undefined;
+
+  if (stability <= 0) {
+    status = 'DEFEAT';
+    defeatReason = '系统稳定性归零：紧急重启服务导致本波次 SLA 违约，产线验收终止';
+  } else if (nextWave > state.totalWaves && state.slaPasses < state.requiredSlaPasses) {
+    status = 'DEFEAT';
+    defeatReason = `压测波次耗尽，仅完成 ${state.slaPasses}/${state.requiredSlaPasses} 次 SLA 验收达标`;
+  }
+
+  const newDiscard = [...state.discardPile, ...state.hand, ...state.stagedPipeline];
+  let drawPile = state.drawPile;
+  let hand: CardInstance[] = [];
+  let discardPile = newDiscard;
+  let upcomingFaultIds: string[] = [];
+
+  if (status === 'PLANNING') {
+    for (const rid of state.relicIds) {
+      const relic = relicRegistry[rid];
+      if (relic?.onTurnStart) {
+        relic.onTurnStart(cloneMetrics(rebooted), nextWave);
+      }
+    }
+    upcomingFaultIds = encounter.waveFaultSchedule[nextWave - 1] ?? [];
+    const surfaced = surfaceCounterCard(drawPile, upcomingFaultIds);
+    const drawRes = drawCards(surfaced, discardPile, HAND_SIZE, rng);
+    hand = drawRes.drawn;
+    drawPile = drawRes.drawPile;
+    discardPile = drawRes.discardPile;
+  }
+
+  return {
+    ...state,
+    wave: status === 'PLANNING' ? nextWave : state.wave,
+    stability,
+    cycles: state.maxCycles,
+    baseMetrics: rebooted,
+    opsUsedThisWave: null,
+    drawPile,
+    hand,
+    stagedPipeline: [],
+    discardPile,
+    upcomingFaultIds,
+    lastTurnTrace: [
+      {
+        kind: 'WATCHDOG_SAVE',
+        title: 'OPS 紧急重启服务（本波 SLA 判负）',
+        detail: '已清空内存泄漏与碎片、解除 TCP 锁死并降温 -18°C（解除热滞回），稳定性 -1。',
+      },
+    ],
+    robotMood: status === 'DEFEAT' ? 'OOM_PANIC' : 'NOMINAL',
     status,
     defeatReason,
   };

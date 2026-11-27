@@ -179,11 +179,12 @@ export function commitTurn(
 
   const newDiscard = [...state.discardPile];
   const newExhaust = [...state.exhaustPile];
+  const injectedFaultCards: CardInstance[] = [];
 
-  // Move staged cards to exhaust (PATCH) or discard (RUNTIME/FAULT)
+  // Move staged cards to exhaust (PATCH / cleared FAULT) or discard (RUNTIME)
   for (const inst of state.stagedPipeline) {
     const def = cardRegistry[inst.cardId];
-    if (def?.type === 'PATCH') {
+    if (def?.type === 'PATCH' || def?.type === 'FAULT') {
       newExhaust.push(inst);
     } else {
       newDiscard.push(inst);
@@ -224,7 +225,7 @@ export function commitTurn(
     });
 
     if (!faultResult.blockedBy && fault.injectFaultCardId) {
-      newDiscard.push(createCardInstance(fault.injectFaultCardId));
+      injectedFaultCards.push(createCardInstance(fault.injectFaultCardId));
     }
   }
 
@@ -313,8 +314,10 @@ export function commitTurn(
         persistentMetrics = relic.onTurnStart(cloneMetrics(persistentMetrics), nextWave);
       }
     }
+    // Place newly injected FAULT cards onto the top of drawPile so players actually face them next wave
+    const drawWithFaults = [...drawPile, ...injectedFaultCards];
     const drawRes = drawCards(
-      drawPile,
+      drawWithFaults,
       discardPile,
       HAND_SIZE + evalDetail.extraDraw,
       rng,

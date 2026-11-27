@@ -134,6 +134,19 @@ describe('Battle State Machine, Watchdog & Content Integrity', () => {
     expect(next.baseMetrics.flags['quant_int4']).toBe(true);
   });
 
+  it('injects FAULT cards into next wave hand when triggered and exhausts them when cleared', () => {
+    // act1_camera_pipe wave 1 triggers fault_tcp_hol -> injects fault_card_tcp_hol
+    const enc = ALL_ENCOUNTERS.find((e) => e.id === 'act1_camera_pipe')!;
+    const state = initBattle(enc, STARTER_DECK_IDS, [], RELIC_REGISTRY, () => 0.5);
+    const wave2 = commitTurn(state, enc, CARD_REGISTRY, FAULT_REGISTRY, RELIC_REGISTRY, () => 0.5);
+    const faultInHand = wave2.hand.find((c) => c.cardId === 'fault_card_tcp_hol');
+    expect(faultInHand).toBeDefined();
+
+    const staged = stageCard(wave2, faultInHand!.instanceId);
+    const wave3 = commitTurn(staged, enc, CARD_REGISTRY, FAULT_REGISTRY, RELIC_REGISTRY, () => 0.5);
+    expect(wave3.exhaustPile.some((c) => c.cardId === 'fault_card_tcp_hol')).toBe(true);
+  });
+
   it('ensures every card, relic, fault, and encounter has valid L1 KnowledgeEntry & EN i18n coverage', () => {
     for (const c of CARD_LIST) {
       expect(KNOWLEDGE_BASE[c.knowledgeId], `Missing knowledgeId for card ${c.id}`).toBeDefined();

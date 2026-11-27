@@ -13,6 +13,36 @@ export interface GdbChatMessage {
 }
 
 const STORAGE_KEY = 'compute_juicer_llm_config_v1';
+const CHAT_STORAGE_KEY = 'compute_juicer_gdb_chat_v1';
+
+export function loadGdbChatHistory(): GdbChatMessage[] {
+  try {
+    const raw = localStorage.getItem(CHAT_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.slice(-40) as GdbChatMessage[];
+    }
+  } catch {
+    // ignore
+  }
+  return [];
+}
+
+export function saveGdbChatHistory(messages: GdbChatMessage[]): void {
+  try {
+    localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages.slice(-40)));
+  } catch {
+    // ignore
+  }
+}
+
+export function clearGdbChatHistory(): void {
+  try {
+    localStorage.removeItem(CHAT_STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+}
 
 export function loadLlmConfig(): LlmConfig {
   try {

@@ -78,7 +78,7 @@ export const STARTER_PROFILES: StarterProfile[] = [
       'net_ethercat_sync',
       'cpp_lockfree_spsc',
       'cpp_neon_tiling',
-      'dep_int4_awq',
+      'dep_trt_graph',
       'dep_flash_fusion',
       'sil_dvfs_turbo',
       'vla_ensemble_verify',

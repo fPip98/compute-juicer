@@ -390,7 +390,7 @@ export const ALL_ENCOUNTERS: EncounterDef[] = [
     isBoss: true,
     totalWaves: 6,
     requiredSlaPasses: 3,
-    slaTarget: { maxLatencyMs: 22.5, minAccuracy: 89.0 },
+    slaTarget: { maxLatencyMs: 21.5, minAccuracy: 89.5 },
     baseMetrics: {
       flopsG: 20.0,
       bytesMB: 1820,
@@ -601,7 +601,7 @@ export const ALL_ENCOUNTERS: EncounterDef[] = [
     isBoss: true,
     totalWaves: 6,
     requiredSlaPasses: 3,
-    slaTarget: { maxLatencyMs: 21.0, minAccuracy: 90.0 },
+    slaTarget: { maxLatencyMs: 20.0, minAccuracy: 90.5 },
     baseMetrics: {
       flopsG: 23.0,
       bytesMB: 2120,

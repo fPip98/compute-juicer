@@ -1,10 +1,19 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { BookOpen, Bot, CircleStop, KeyRound, Search, Send, Settings2, X } from 'lucide-react';
+import { BookOpen, Bot, CircleStop, KeyRound, Search, Send, Settings2, Trash2, X } from 'lucide-react';
 import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { DOMAINS } from '../../data/domains';
 import { Domain, BattleState, ComputedTelemetry, KnowledgeEntry } from '../../engine/types';
 import { KNOWLEDGE_BASE, KNOWLEDGE_LIST } from '../../gdb/knowledgeBase';
-import { askGdbAssistant, GdbChatMessage, LlmConfig, loadLlmConfig, saveLlmConfig } from '../../gdb/llmClient';
+import {
+  askGdbAssistant,
+  clearGdbChatHistory,
+  GdbChatMessage,
+  LlmConfig,
+  loadGdbChatHistory,
+  loadLlmConfig,
+  saveGdbChatHistory,
+  saveLlmConfig,
+} from '../../gdb/llmClient';
 import { useI18n } from './i18n';
 import { cn, COLORS, domainColor, DomainChip, fmt } from './primitives';
 
@@ -386,11 +395,15 @@ function LlmPanel({
   const { tx } = useI18n();
   const [config, setConfig] = useState<LlmConfig>(() => loadLlmConfig());
   const [showConfig, setShowConfig] = useState(false);
-  const [history, setHistory] = useState<GdbChatMessage[]>([]);
+  const [history, setHistory] = useState<GdbChatMessage[]>(() => loadGdbChatHistory());
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    saveGdbChatHistory(history);
+  }, [history]);
 
   useEffect(() => {
     if (pendingQuestion) {
@@ -435,6 +448,18 @@ function LlmPanel({
           <span className="truncate font-mono text-[9px] text-dim">ctx: {entry.id}</span>
         )}
         <div className="flex-1" />
+        {history.length > 0 && (
+          <button
+            onClick={() => {
+              clearGdbChatHistory();
+              setHistory([]);
+            }}
+            className="keycap flex items-center gap-1 px-2 py-1 font-mono text-[10px] text-mute hover:text-estop"
+            title={tx('清空本地保存的对话记录', 'Clear saved chat history')}
+          >
+            <Trash2 size={12} /> {tx('清空', 'CLEAR')}
+          </button>
+        )}
         <button onClick={() => setShowConfig((s) => !s)} data-pressed={showConfig} className="keycap flex items-center gap-1.5 px-2 py-1 font-mono text-[10px]">
           <Settings2 size={12} /> CONFIG
         </button>

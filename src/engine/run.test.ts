@@ -42,6 +42,31 @@ describe('Milestone 2 Roguelike Run State Machine', () => {
     expect(run.deckCardIds.length).toBeGreaterThanOrEqual(14);
   });
 
+  it('deduplicates owned PATCH cards and applies 2+1 focus-domain weighting in reward drafts', () => {
+    const profile = STARTER_PROFILES[0]; // focus: DEPLOY, VLA, SILICON
+    let run = startRunWithProfile(profile, 1, () => 0.3);
+    run = enterMapNode(run, 'act1_start', pools, () => 0.3);
+    run = { ...run, activeBattle: { ...run.activeBattle!, status: 'VICTORY', slaPasses: 2 } };
+    run = finishBattleInRun(run, pools, () => 0.3);
+
+    const choices = run.activeReward!.cardChoices;
+    expect(choices.length).toBe(3);
+    // No already-owned PATCH should appear
+    const owned = new Set(run.deckCardIds);
+    for (const cid of choices) {
+      const def = CARD_LIST.find((c) => c.id === cid)!;
+      if (def.type === 'PATCH') {
+        expect(owned.has(cid)).toBe(false);
+      }
+    }
+    // 2 focus-domain + 1 cross-domain
+    const focusSet = new Set(profile.focusDomains);
+    const focusCount = choices.filter((cid) =>
+      focusSet.has(CARD_LIST.find((c) => c.id === cid)!.domain),
+    ).length;
+    expect(focusCount).toBe(2);
+  });
+
   it('progresses from battle victory -> reward draft -> map -> event -> shop -> rest -> Act 2', () => {
     let run = startRunWithProfile(STARTER_PROFILES[1], 1, () => 0.4);
 

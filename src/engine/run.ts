@@ -361,11 +361,8 @@ export function finishBattleInRun(
     };
   }
 
-  // Draft 3 non-FAULT cards (weighted toward unseen/diverse domains)
-  const draftable = pools.cards.filter((c) => c.type !== 'FAULT');
-  const cardChoices = shuffle(draftable, rng)
-    .slice(0, 3)
-    .map((c) => c.id);
+  // Smart weighted 2+1 draft (2 focus-domain + 1 cross-domain, deduplicating owned PATCHes)
+  const cardChoices = draftSmartCards(run, pools, 3, rng);
 
   // Drop an unowned relic on ELITE or BOSS clears
   let relicChoice: string | undefined;
@@ -482,15 +479,61 @@ export function proceedToMapFromNode(
   };
 }
 
+function draftSmartCards(
+  run: RunState,
+  pools: RunContentPools,
+  count: number,
+  rng: () => number,
+): string[] {
+  const ownedSet = new Set(run.deckCardIds);
+  // Exclude FAULT cards and already-owned persistent PATCH cards
+  const eligible = pools.cards.filter(
+    (c) => c.type !== 'FAULT' && !(c.type === 'PATCH' && ownedSet.has(c.id)),
+  );
+  const profile = run.profileId ? pools.profiles[run.profileId] : undefined;
+  const focus = new Set(profile?.focusDomains ?? []);
+
+  if (focus.size === 0 || count < 3) {
+    return shuffle(eligible, rng)
+      .slice(0, count)
+      .map((c) => c.id);
+  }
+
+  const inFocus = shuffle(
+    eligible.filter((c) => focus.has(c.domain)),
+    rng,
+  );
+  const crossDomain = shuffle(
+    eligible.filter((c) => !focus.has(c.domain)),
+    rng,
+  );
+
+  const focusQuota = Math.max(1, count - 1); // 2+1 for 3-card draft, 3+1 for 4-card shop
+  const picked: CardDef[] = [];
+  picked.push(...inFocus.slice(0, focusQuota));
+  picked.push(...crossDomain.slice(0, count - picked.length));
+
+  if (picked.length < count) {
+    const pickedIds = new Set(picked.map((c) => c.id));
+    const rest = shuffle(
+      eligible.filter((c) => !pickedIds.has(c.id)),
+      rng,
+    );
+    picked.push(...rest.slice(0, count - picked.length));
+  }
+
+  return shuffle(picked, rng).map((c) => c.id);
+}
+
 function buildShopInventory(
   run: RunState,
   pools: RunContentPools,
   rng: () => number,
 ): ShopInventory {
-  const nonFaultCards = shuffle(
-    pools.cards.filter((c) => c.type !== 'FAULT'),
-    rng,
-  ).slice(0, 4);
+  const shopCardIds = draftSmartCards(run, pools, 4, rng);
+  const nonFaultCards = shopCardIds
+    .map((id) => pools.cards.find((c) => c.id === id))
+    .filter((c): c is CardDef => Boolean(c));
   const unownedRelics = shuffle(
     pools.relics.filter((r) => !run.relicIds.includes(r.id)),
     rng,

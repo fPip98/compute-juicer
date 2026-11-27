@@ -82,14 +82,16 @@ export function initBattle(
 
   const upcomingFaultIds = encounter.waveFaultSchedule[0] ?? [];
 
+  const maxStability = encounter.isBoss ? 4 : 3;
+
   return {
     encounterId: encounter.id,
     wave: 1,
     totalWaves: encounter.totalWaves,
     slaPasses: 0,
     requiredSlaPasses: encounter.requiredSlaPasses,
-    stability: 3,
-    maxStability: 3,
+    stability: maxStability,
+    maxStability,
     cycles: 3,
     maxCycles: 3,
     baseMetrics,

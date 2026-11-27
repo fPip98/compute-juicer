@@ -22,13 +22,14 @@ export const RELIC_LIST: RelicDef[] = [
     name: 'RK3588 低功耗板卡',
     domain: 'SILICON',
     icon: 'BatteryCharging',
-    summary: '超低功耗：基础功耗 -7W、热节流阈值 +4°C，但开局有效带宽 -10 GB/s（极考验量化与 C++ 优化）。',
+    summary: '超低功耗统一内存：基础功耗 -7W、热节流阈值 +5°C、拷贝延迟 -1.8ms，带宽略窄 -6 GB/s。',
     knowledgeId: 'k_dvfs_roofline',
     onBattleStart: (m) => ({
       ...m,
       powerW: Math.max(8, m.powerW - 7),
-      throttleTempC: m.throttleTempC + 4,
-      bandwidthGBs: Math.max(40, m.bandwidthGBs - 10),
+      throttleTempC: m.throttleTempC + 5,
+      ioCopyMs: Number(Math.max(0, m.ioCopyMs - 1.8).toFixed(2)),
+      bandwidthGBs: Math.max(40, m.bandwidthGBs - 6),
     }),
   },
   {

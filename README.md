@@ -5,6 +5,15 @@
 >
 > **在线试玩 (Play Online)**：https://fpip98.github.io/compute-juicer/
 
+![Compute Juicer Battle Workbench](./docs/screenshots/battle-workbench.png)
+
+<details>
+<summary>点击查看：按 <code>F5</code> 冻结战场呼出的 GDB / JTAG 硬件断点终端（44 篇离线手册 + AI 架构师答疑）</summary>
+
+![GDB Hardware Breakpoint Terminal](./docs/screenshots/gdb-terminal.png)
+
+</details>
+
 ---
 
 ## 核心特色

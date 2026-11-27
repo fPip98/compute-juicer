@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { BookOpen, Bot, CircleStop, KeyRound, Search, Send, Settings2, Trash2, X } from 'lucide-react';
 import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { DOMAINS } from '../../data/domains';
+import { ENCOUNTER_REGISTRY } from '../../data/encounters';
 import { Domain, BattleState, ComputedTelemetry, KnowledgeEntry } from '../../engine/types';
 import { KNOWLEDGE_BASE, KNOWLEDGE_LIST } from '../../gdb/knowledgeBase';
 import {
@@ -421,12 +422,28 @@ function LlmPanel({
     if (!q || loading) return;
     setInput('');
     setError(null);
+    const enc = ENCOUNTER_REGISTRY[battle.encounterId];
+    const encounterLabel = enc ? `ACT ${enc.act} · ${enc.name}` : battle.encounterId;
     const prior = history;
-    setHistory([...prior, { role: 'user', content: q }]);
+    const userMsg: GdbChatMessage = {
+      role: 'user',
+      content: q,
+      encounterId: battle.encounterId,
+      encounterLabel,
+    };
+    setHistory([...prior, userMsg]);
     setLoading(true);
     try {
       const answer = await askGdbAssistant(config, battle, q, prior, entry);
-      setHistory((h) => [...h, { role: 'assistant', content: answer }]);
+      setHistory((h) => [
+        ...h,
+        {
+          role: 'assistant',
+          content: answer,
+          encounterId: battle.encounterId,
+          encounterLabel,
+        },
+      ]);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -510,14 +527,31 @@ function LlmPanel({
             <div className="mt-3 text-mute">{tx('示例：“为什么我刚才先打超频延迟没降？”', 'e.g. "Why did DVFS overclock not lower my latency?"')}</div>
           </div>
         )}
-        {history.map((msg, i) => (
-          <motion.div key={i} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} className="mb-3">
-            <div className={cn('mb-0.5 text-[10px] font-black', msg.role === 'user' ? 'text-te' : 'text-scope')}>
-              {msg.role === 'user' ? '(gdb) ask' : '>>> architect'}
+        {history.map((msg, i) => {
+          const prevEnc = i > 0 ? history[i - 1].encounterId : undefined;
+          const showDivider = msg.encounterId && msg.encounterId !== prevEnc;
+          const isOtherEnc = msg.encounterId && msg.encounterId !== battle.encounterId;
+          return (
+            <div key={i}>
+              {showDivider && (
+                <div className="my-3 flex items-center gap-2 font-mono text-[9.5px] text-dim">
+                  <span className="h-px flex-1 bg-[#222227]" />
+                  <span className={cn(isOtherEnc ? 'text-dim' : 'text-te')}>
+                    {msg.encounterLabel ?? msg.encounterId}
+                    {isOtherEnc ? tx(' · 历史归档（不带入本次上下文）', ' · archived (excluded from context)') : tx(' · 当前上下文', ' · active context')}
+                  </span>
+                  <span className="h-px flex-1 bg-[#222227]" />
+                </div>
+              )}
+              <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} className={cn('mb-3', isOtherEnc && 'opacity-55')}>
+                <div className={cn('mb-0.5 text-[10px] font-black', msg.role === 'user' ? 'text-te' : 'text-scope')}>
+                  {msg.role === 'user' ? '(gdb) ask' : '>>> architect'}
+                </div>
+                <div className={cn('font-sans text-[13px] whitespace-pre-wrap', msg.role === 'user' ? 'text-ink' : 'text-ink-2')}>{msg.content}</div>
+              </motion.div>
             </div>
-            <div className={cn('font-sans text-[13px] whitespace-pre-wrap', msg.role === 'user' ? 'text-ink' : 'text-ink-2')}>{msg.content}</div>
-          </motion.div>
-        ))}
+          );
+        })}
         {loading && (
           <div className="text-scope">
             &gt;&gt;&gt; architect is reading the registers <span className="blink">▌</span>

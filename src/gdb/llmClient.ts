@@ -10,6 +10,8 @@ export interface LlmConfig {
 export interface GdbChatMessage {
   role: 'user' | 'assistant';
   content: string;
+  encounterId?: string;
+  encounterLabel?: string;
 }
 
 const STORAGE_KEY = 'compute_juicer_llm_config_v1';
@@ -124,9 +126,15 @@ export async function askGdbAssistant(
     headers['Authorization'] = `Bearer ${config.apiKey.trim()}`;
   }
 
+  // Only send messages from the current encounter to the LLM so prior battles never pollute context
+  const sameEncounterHistory = history
+    .filter((m) => !m.encounterId || m.encounterId === state.encounterId)
+    .slice(-6)
+    .map(({ role, content }) => ({ role, content }));
+
   const messages = [
     { role: 'system', content: buildGdbSystemPrompt(state, focusedKnowledge) },
-    ...history.slice(-6),
+    ...sameEncounterHistory,
     { role: 'user', content: question },
   ];
 

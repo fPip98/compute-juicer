@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { CARD_LIST, CARD_REGISTRY } from '../data/cards';
-import { ACT1_ENCOUNTERS, STARTER_DECK_IDS, STARTER_RELIC_IDS } from '../data/encounters';
+import { ACT1_ENCOUNTERS, ALL_ENCOUNTERS, STARTER_DECK_IDS, STARTER_RELIC_IDS } from '../data/encounters';
 import { FAULT_LIST, FAULT_REGISTRY } from '../data/faults';
 import { RELIC_LIST, RELIC_REGISTRY } from '../data/relics';
 import { KNOWLEDGE_BASE } from '../gdb/knowledgeBase';
+import { EN_CARD_META, EN_ENCOUNTER_META, EN_FAULT_META, EN_RELIC_META } from '../i18n';
 import { commitTurn, createCardInstance, initBattle, reorderStagedCard, stageCard } from './battle';
 import { computeTelemetry, evaluateSla, stepThermal } from './physics';
 import { evaluatePipeline } from './pipeline';
@@ -133,15 +134,21 @@ describe('Battle State Machine, Watchdog & Content Integrity', () => {
     expect(next.baseMetrics.flags['quant_int4']).toBe(true);
   });
 
-  it('ensures every card, relic, and fault links to a valid L1 KnowledgeEntry', () => {
+  it('ensures every card, relic, fault, and encounter has valid L1 KnowledgeEntry & EN i18n coverage', () => {
     for (const c of CARD_LIST) {
       expect(KNOWLEDGE_BASE[c.knowledgeId], `Missing knowledgeId for card ${c.id}`).toBeDefined();
+      expect(EN_CARD_META[c.id], `Missing EN_CARD_META for card ${c.id}`).toBeDefined();
     }
     for (const r of RELIC_LIST) {
       expect(KNOWLEDGE_BASE[r.knowledgeId], `Missing knowledgeId for relic ${r.id}`).toBeDefined();
+      expect(EN_RELIC_META[r.id], `Missing EN_RELIC_META for relic ${r.id}`).toBeDefined();
     }
     for (const f of FAULT_LIST) {
       expect(KNOWLEDGE_BASE[f.knowledgeId], `Missing knowledgeId for fault ${f.id}`).toBeDefined();
+      expect(EN_FAULT_META[f.id], `Missing EN_FAULT_META for fault ${f.id}`).toBeDefined();
+    }
+    for (const e of ALL_ENCOUNTERS) {
+      expect(EN_ENCOUNTER_META[e.id], `Missing EN_ENCOUNTER_META for encounter ${e.id}`).toBeDefined();
     }
   });
 });

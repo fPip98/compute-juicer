@@ -207,10 +207,75 @@ export const EN_ENCOUNTER_META: Record<string, { name: string; scenario: string 
     scenario:
       'First VLA bring-up on a fresh edge dev board. Break out of Memory-Bound and push E2E Latency under SLA!',
   },
+  act1_camera_pipe: {
+    name: 'Stereo Camera Driver Pipeline',
+    scenario:
+      'High kernel-to-user copy overhead! Use V4L2 Zero-Copy and C++ preprocessing to slash E2E I/O latency.',
+  },
+  act1_elite_leak: {
+    name: 'ELITE P0 · Memory Leak Avalanche',
+    scenario:
+      'Critical elite fault: continuous heap leaks push toward OOM. Defeat it for a guaranteed Hardware Relic drop!',
+  },
+  act1_thermal_bench: {
+    name: 'Sealed Chassis Thermal Soak',
+    scenario:
+      'Sustained high-load soak pushing die temp toward 85°C Thermal Throttling. Manage power and active cooling!',
+  },
   act1_boss_egg: {
     name: 'ACT 1 BOSS · Raw Egg Sorting Arm',
     scenario:
-      'High-speed conveyor: keep VLA closed-loop Latency ≤ 22ms and Accuracy ≥ 90%. Miss Latency and eggs drop; lose Accuracy and the gripper crushes them!',
+      'High-speed conveyor: keep VLA closed-loop Latency ≤ 24ms and Accuracy ≥ 89%. Miss Latency and eggs drop; lose Accuracy and the gripper crushes them!',
+  },
+  act2_multi_sensor: {
+    name: 'Multi-Cam + LiDAR Calibration',
+    scenario:
+      'Act 2 multi-sensor integration! Doubled sensor bandwidth puts bus and L2 cache under heavy stress.',
+  },
+  act2_dds_storm: {
+    name: 'ROS2 DDS Broadcast Storm',
+    scenario:
+      '12 nodes broadcasting point clouds & images simultaneously. Stack copies and weak-net loss spike jitter!',
+  },
+  act2_elite_irq: {
+    name: 'ELITE P0 · IRQ Storm + Cache Thrash',
+    scenario:
+      'Gigabit LiDAR hard-IRQ storm stacked with L2 Cache Thrashing — test your Linux driver & C++ micro-arch mastery!',
+  },
+  act2_kv_bloat: {
+    name: 'Long-Context KV Cache Bloat',
+    scenario:
+      'Multi-step VLA planning causes history frames to pile up. Compress KV Cache before OOM Killer strikes!',
+  },
+  act2_boss_quadruped: {
+    name: 'ACT 2 BOSS · Blind Quadruped on Wet Stairs',
+    scenario:
+      'High-rate joint control on slippery stairs: hold Latency ≤ 22.5ms & Accuracy ≥ 89% through IRQ storms, bus loss & fragmentation!',
+  },
+  act3_hot_chassis: {
+    name: '42°C Sealed Hot-Chassis Soak',
+    scenario:
+      'Act 3 mass production! 42°C ambient kills passive cooling — break through with undervolting and architectural efficiency.',
+  },
+  act3_ota_storm: {
+    name: 'In-Flight OTA Firmware Ambush',
+    scenario:
+      'Silent OTA update fires mid-mission — CPU jitter, RAM spikes, and die temperature surge simultaneously!',
+  },
+  act3_elite_vla_long: {
+    name: 'ELITE P0 · Multimodal Long-Context Hell',
+    scenario:
+      '4K multi-cam + massive KV Cache + heavy EMI noise. Ultimate full-stack 6-layer warm-up!',
+  },
+  act3_net_blackout: {
+    name: 'High-EMI Weak-Net Fallback',
+    scenario:
+      'Harsh industrial interference: packet loss, TCP head-of-line blocking, and sensor noise strike together!',
+  },
+  act3_boss_autonomous: {
+    name: 'ACT 3 FINAL BOSS · Fanless Storm VLA Driving',
+    scenario:
+      'Final mass-production sign-off: 40°C fanless box + storm EMI + 4K long-context + OTA preemption. Hold ≤ 21ms & ≥ 90% Accuracy!',
   },
 };
 
@@ -232,6 +297,22 @@ export const EN_CARD_META: Record<string, { name: string; summary: string; order
     name: 'PMIC Dynamic Undervolt',
     summary: 'PATCH: Tune PMIC rail. Power -6W, Temp -5°C, Peak FLOPS -6%.',
   },
+  sil_sram_scratchpad: {
+    name: 'On-Chip SRAM Scratchpad',
+    summary: 'PATCH: Pin hot activations in on-chip SRAM. Bandwidth +24 GB/s, Bytes ×0.88.',
+  },
+  sil_clock_gating: {
+    name: 'Idle Unit Clock Gating',
+    summary: '0-cost power save: cut idle peripheral clocks for Temp -8°C & +1 draw next wave.',
+  },
+  sil_pcie_gen5: {
+    name: 'PCIe P2P DMA Direct',
+    summary: 'PATCH: Peer-to-peer DMA bypassing host RAM. Copy -2.5ms, Bandwidth +12 GB/s.',
+  },
+  sil_liquid_metal: {
+    name: 'Phase-Change Liquid Metal',
+    summary: 'PATCH: Slash package thermal resistance. Cooling ×1.45, Throttle Threshold +5°C (to 90°C).',
+  },
   ker_v4l2_dmabuf: {
     name: 'V4L2 DMABUF Zero-Copy',
     summary: 'PATCH: Share physical pages directly from camera to NPU. Copy -4.0ms, Buffers -45MB.',
@@ -239,7 +320,7 @@ export const EN_CARD_META: Record<string, { name: string; summary: string; order
   },
   ker_preempt_rt: {
     name: 'PREEMPT_RT + isolcpus',
-    summary: 'PATCH: Real-time kernel + core pinning. Caps OS Jitter ≤ 0.8ms, immune to Preemption (Peak FLOPS -6%).',
+    summary: 'PATCH: Real-time kernel + core pinning. Caps OS Jitter ≤ 0.8ms, immune to Preemption/OTA (Peak FLOPS -6%).',
   },
   ker_threaded_irq: {
     name: 'Threaded IRQ Split',
@@ -248,6 +329,22 @@ export const EN_CARD_META: Record<string, { name: string; summary: string; order
   ker_cgroup_reclaim: {
     name: 'cgroup Memory Reclaim',
     summary: 'Reclaim leaked/fragmented pages (up to -140MB RAM) and draw +1 card next wave.',
+  },
+  ker_hugepages: {
+    name: '2MB HugePages Mapping',
+    summary: 'PATCH: Slash TLB misses & page-table walks. Bandwidth +16 GB/s, OS Base -1.0ms.',
+  },
+  ker_dma_sg: {
+    name: 'DMA Scatter-Gather List',
+    summary: 'Hardware SG descriptor transfer across fragmented pages: Copy -2.8ms, Bytes ×0.88.',
+  },
+  ker_rcu_lockless: {
+    name: 'RCU Lock-Free Read Path',
+    summary: '0-cost kernel RCU: OS Base -1.2ms, OS Jitter -1.5ms this wave.',
+  },
+  ker_oom_adj: {
+    name: 'oom_score_adj -900 Shield',
+    summary: 'PATCH: Protect inference process & evict bg caches. RAM Cap +120MB.',
   },
   net_iceoryx_shm: {
     name: 'ROS2 Iceoryx Shared Memory',
@@ -260,6 +357,22 @@ export const EN_CARD_META: Record<string, { name: string; summary: string; order
   net_ethercat_sync: {
     name: 'EtherCAT Distributed Clock',
     summary: 'PATCH: Sub-microsecond servo sync. Net Bus -2.0ms, Accuracy +2.5%.',
+  },
+  net_xdp_bypass: {
+    name: 'eBPF / XDP Kernel Bypass',
+    summary: 'PATCH: Process sensor frames at NIC driver RX ring. Net Bus -3.2ms, Copy -2.0ms.',
+  },
+  net_canfd_arb: {
+    name: 'CAN-FD Priority Arbitration',
+    summary: '0-cost low-ID joint frames: Net Bus -1.8ms, Accuracy +1.5% this wave.',
+  },
+  net_tsn_gate: {
+    name: 'TSN 802.1Qbv Gate Control',
+    summary: 'PATCH: Deterministic Ethernet time slots. Immune to Weak-Net Loss, OS Jitter -1.5ms.',
+  },
+  net_udp_fec: {
+    name: 'UDP + Forward Error Correction',
+    summary: 'Drop TCP retransmits for UDP+FEC: Net Bus -2.6ms, Accuracy +2.5%, clears TCP HOL.',
   },
   cpp_neon_tiling: {
     name: 'ARM NEON + Loop Tiling',
@@ -277,6 +390,22 @@ export const EN_CARD_META: Record<string, { name: string; summary: string; order
   cpp_lockfree_spsc: {
     name: 'Lock-Free SPSC Ring',
     summary: 'PATCH: Eliminate mutex contention. Sensor Ingest -1.8ms, OS Jitter -1.2ms.',
+  },
+  cpp_prefetch: {
+    name: 'Software Prefetch (__builtin_prefetch)',
+    summary: '0-cost hide DDR latency: Bandwidth +14 GB/s (+24 GB/s if currently Memory-Bound!).',
+  },
+  cpp_branchless: {
+    name: 'Branchless CMOV Optimization',
+    summary: 'Eliminate branch misprediction flushes: Peak FLOPS ×1.18 & +1 draw next wave.',
+  },
+  cpp_std_span: {
+    name: 'std::span Zero-Copy View',
+    summary: '0-cost eliminate vector deep copies: Copy -1.6ms, frees 35MB temp buffers.',
+  },
+  cpp_soa_layout: {
+    name: 'SoA Data-Oriented Layout',
+    summary: 'PATCH: AoS → SoA for spatial locality. Bandwidth +20 GB/s, immune to Cache Thrashing.',
   },
   dep_qat_calib: {
     name: 'QAT Calibration Pass',
@@ -301,6 +430,22 @@ export const EN_CARD_META: Record<string, { name: string; summary: string; order
     name: 'Extreme INT2 Truncation',
     summary: '0-cost gamble: Bytes ×0.35, Weights ×0.60, but Accuracy -13% (egg-crush hazard!).',
   },
+  dep_smoothquant_int8: {
+    name: 'INT8 SmoothQuant (W8A8)',
+    summary: 'PATCH: Migrate activation outliers to weights. RAM ×0.65, Bytes ×0.65, FLOPs ×0.82, Acc -1.5% (-0.5% w/ QAT).',
+  },
+  dep_spec_decode: {
+    name: 'Speculative Decoding',
+    summary: 'Draft-model guess + parallel target verify: lossless! Bytes ×0.62, FLOPs ×1.10.',
+  },
+  dep_static_plan: {
+    name: 'TVM Static Memory Planning',
+    summary: 'PATCH: Compile-time tensor buffer reuse. Buffers -90MB RAM, Power -2W.',
+  },
+  dep_lora_merge: {
+    name: 'Offline LoRA Weight Merge',
+    summary: '0-cost fuse W + BA before deploy: FLOPs ×0.90, Bytes ×0.90 this wave.',
+  },
   vla_token_prune: {
     name: 'Visual Token Pruning',
     summary: 'Drop background patches: FLOPs ×0.68, Bytes ×0.82, Accuracy -1.5%.',
@@ -317,6 +462,22 @@ export const EN_CARD_META: Record<string, { name: string; summary: string; order
     name: 'Tactile Force Verification',
     summary: 'Fuse fingertip force feedback: Accuracy +5.0%, FLOPs +2.5G.',
   },
+  vla_moe_route: {
+    name: 'MoE Sparse Expert Routing',
+    summary: 'PATCH: Activate Top-2 experts per token. FLOPs ×0.58, but resident RAM +110MB.',
+  },
+  vla_gqa_head: {
+    name: 'GQA Grouped-Query Attention',
+    summary: 'PATCH: Share KV heads across Q groups. KV RAM ×0.55, Bytes ×0.84, Acc -0.8%.',
+  },
+  vla_sys1_sys2: {
+    name: 'Dual-System (Sys1 + Sys2)',
+    summary: 'PATCH: Decouple fast 100Hz reflex from slow VLA planning. SLA +4.0ms & Accuracy +2.0%!',
+  },
+  vla_early_exit: {
+    name: 'Dynamic Early-Exit',
+    summary: '0-cost shallow exit on easy frames: FLOPs ×0.75, Bytes ×0.80, Accuracy -3.0%.',
+  },
   fault_card_memleak: {
     name: 'Zombie Memory Leak',
     summary: 'FAULT: Spend 1 CYCLE to hunt & free 80MB leaked RAM.',
@@ -325,12 +486,24 @@ export const EN_CARD_META: Record<string, { name: string; summary: string; order
     name: 'TCP Head-of-Line Packet',
     summary: 'FAULT: Spend 1 CYCLE to flush blocked queue (-2.0ms Net Bus).',
   },
+  fault_card_irq_storm: {
+    name: 'High-Freq IRQ Storm',
+    summary: 'FAULT: Spend 1 CYCLE to mask runaway IRQ (-2.5ms Jitter; cleared by Threaded IRQ).',
+  },
+  fault_card_4k_bloat: {
+    name: '4K Redundant Vision Branch (Debt)',
+    summary: 'PM Tech Debt: clogs draw. Spend 1 CYCLE to downsample temporarily (Bytes ×0.90) — purge at Bench!',
+  },
 };
 
 export const EN_RELIC_META: Record<string, { name: string; summary: string }> = {
   relic_orin_agx: {
     name: 'Jetson Orin Module',
     summary: 'Edge flagship: RAM Cap +180MB, Peak FLOPS +250 GFLOPs/s, Power +3W.',
+  },
+  relic_rk3588_soc: {
+    name: 'RK3588 Low-Power SoC',
+    summary: 'Unified-mem low power: Power -7W, Throttle +5°C, Copy -1.8ms, Bandwidth -6 GB/s.',
   },
   relic_liquid_cool: {
     name: 'Copper Micro-Liquid Loop',
@@ -342,11 +515,35 @@ export const EN_RELIC_META: Record<string, { name: string; summary: string }> = 
   },
   relic_l2_pinning: {
     name: 'L2 Cache Weight Pinning',
-    summary: 'Pin hot kernels in L2: Effective Bandwidth +18 GB/s.',
+    summary: 'Pin hot kernels in L2: Effective Bandwidth +20 GB/s.',
   },
   relic_ethercat_nic: {
     name: 'Hard-RT EtherCAT NIC',
-    summary: 'Industrial servo bus: Base Net Latency -1.5ms.',
+    summary: 'Industrial servo bus: Base Net Latency -1.8ms, OS Jitter -0.8ms.',
+  },
+  relic_rdma_nic: {
+    name: 'RDMA Zero-Copy SmartNIC',
+    summary: 'Hardware stack offload: Copy -2.0ms, Net Bus -1.2ms.',
+  },
+  relic_3d_sram: {
+    name: '3D-Stacked On-Chip SRAM',
+    summary: 'Bandwidth monster: Effective Bandwidth +30 GB/s, Power +4W.',
+  },
+  relic_tvm_autotuner: {
+    name: 'TVM AutoTuner Engine',
+    summary: 'Target-tuned schedules: FLOPs ×0.90, Bytes ×0.92 at battle start.',
+  },
+  relic_tactile_skin: {
+    name: 'High-Density Tactile Skin',
+    summary: 'Base Accuracy +3.0% at battle start — protects fragile payloads.',
+  },
+  relic_hardware_sync: {
+    name: 'Hardware Frame-Sync Trigger',
+    summary: 'Eliminates multi-cam timestamp drift: Sensor Ingest -1.5ms, Accuracy +1.5%.',
+  },
+  relic_ecc_lpddr: {
+    name: 'Industrial LPDDR5X ECC',
+    summary: 'RAM Cap +200MB and Effective Bandwidth +12 GB/s.',
   },
 };
 
@@ -370,5 +567,29 @@ export const EN_FAULT_META: Record<string, { name: string; intentText: string }>
   fault_4k_burst: {
     name: 'Multi-Cam 4K Frame Burst',
     intentText: 'Bytes +280MB, FLOPs +6G — heavy Memory-Bound pressure!',
+  },
+  fault_irq_storm: {
+    name: 'High-Freq IMU/LiDAR IRQ Storm',
+    intentText: 'OS Jitter +5.0ms & injects IRQ Storm FAULT card',
+  },
+  fault_kv_bloat: {
+    name: 'Long-Context KV Cache Bloat',
+    intentText: 'KV RAM +140MB, Bytes +220MB (Halved by PagedAttention)',
+  },
+  fault_cache_thrash: {
+    name: 'L2 Cache Thrashing',
+    intentText: 'Bandwidth -22 GB/s (Blocked by SoA Memory Layout)',
+  },
+  fault_weak_net_loss: {
+    name: 'Weak-Net Packet Loss & Jitter',
+    intentText: 'Net Bus +3.5ms, Accuracy -3.5% (Blocked by TSN Gate)',
+  },
+  fault_ota_daemon: {
+    name: 'Background OTA Firmware Ambush',
+    intentText: 'OS Jitter +4.5ms, RAM +95MB, Temp +8°C (Jitter blocked by PREEMPT_RT)',
+  },
+  fault_emi_noise: {
+    name: 'Storm / Heavy EMI Sensor Noise',
+    intentText: 'Visual SNR drops — Model Accuracy -4.0%',
   },
 };

@@ -1,4 +1,6 @@
 import { BattleState, ComputedTelemetry, EncounterDef, OpsActionId, PipelinePreviewResult, RobotMood } from '../../engine/types';
+import { useMemo } from 'react';
+import { FAULT_COUNTERS } from '../../engine/battle';
 import { HandTray } from './HandTray';
 import { LatencyTimeline } from './LatencyTimeline';
 import { PipelineBay } from './PipelineBay';
@@ -54,6 +56,11 @@ export function BattleView({
   const locked = !planning || isExecuting;
   const hoveringHand = !!hoveredCardId && battle.hand.some((c) => c.instanceId === hoveredCardId);
   const showSim = !isExecuting && (battle.stagedPipeline.length > 0 || hoveringHand);
+  // Hand cards that directly counter a telegraphed fault this wave (FAULT_COUNTERS contract)
+  const counterCardIds = useMemo(
+    () => new Set(battle.upcomingFaultIds.flatMap((fid) => FAULT_COUNTERS[fid] ?? [])),
+    [battle.upcomingFaultIds],
+  );
   void encounter;
 
   const mood: RobotMood = isExecuting ? 'WORKING' : battle.status === 'VICTORY' ? 'VICTORY' : battle.robotMood;
@@ -62,7 +69,7 @@ export function BattleView({
   return (
     <main
       className={cn(
-        'battlefield grid min-h-0 flex-1 grid-cols-1 gap-2',
+        'battlefield grid min-h-0 flex-1 grid-cols-1 gap-2 short:gap-1.5',
         'lg:grid-cols-[288px_minmax(0,1fr)] desk:grid-rows-[minmax(0,1fr)_auto]',
         halted && 'battlefield-halted',
       )}
@@ -82,8 +89,8 @@ export function BattleView({
         />
       </div>
 
-      <div className="flex min-h-0 min-w-0 flex-col gap-2 lg:row-start-1">
-        <div className="grid min-h-0 grid-cols-1 gap-2 md:grid-cols-[minmax(0,1.12fr)_minmax(0,1fr)] desk:min-h-[168px] desk:flex-1">
+      <div className="flex min-h-0 min-w-0 flex-col gap-2 lg:row-start-1 short:gap-1.5">
+        <div className="grid min-h-0 grid-cols-1 gap-2 md:grid-cols-[minmax(0,1.12fr)_minmax(0,1fr)] desk:min-h-[168px] desk:flex-1 short:min-h-[146px]">
           <RooflineChart
             nowM={battle.baseMetrics}
             nowT={baseTelemetry}
@@ -106,7 +113,7 @@ export function BattleView({
             onOpenKnowledge={onOpenKnowledge}
           />
         </div>
-        <div className="min-h-0 desk:min-h-[222px] desk:flex-1 [&>section]:h-full">
+        <div data-tour="pipeline" className="min-h-0 desk:min-h-[222px] desk:flex-1 short:min-h-0 short:flex-none [&>section]:h-full">
           <PipelineBay
             battle={battle}
             baseTelemetry={baseTelemetry}
@@ -129,6 +136,8 @@ export function BattleView({
       <div className="min-h-0 lg:col-span-2 lg:row-start-2">
         <HandTray
           hand={battle.hand}
+          rackSlots={battle.rackSlots}
+          counterCardIds={counterCardIds}
           cyclesRemaining={stagedPreview.cyclesRemaining}
           locked={locked}
           ended={!planning}

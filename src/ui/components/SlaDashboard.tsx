@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { BookOpen } from 'lucide-react';
 import { ReactNode } from 'react';
 import { FAULT_REGISTRY } from '../../data/faults';
+import { predictWavesToRelease } from '../../engine/physics';
 import { ComputedTelemetry, SlaTarget, SystemMetrics } from '../../engine/types';
 import { useI18n } from './i18n';
 import { cn, COLORS, domainColor, DynIcon, fmt, fmtDelta, Led, PanelHeader } from './primitives';
@@ -79,6 +80,7 @@ function Bars({
   min = 0,
   max,
   markers,
+  band,
 }: {
   now: Segment[];
   sim: Segment[];
@@ -86,10 +88,20 @@ function Bars({
   min?: number;
   max: number;
   markers: Marker[];
+  /** Shaded range, e.g. 78–85°C thermal hysteresis band. */
+  band?: { from: number; to: number; title: string };
 }) {
   const span = Math.max(1e-6, max - min);
+  const pctOf = (v: number) => Math.max(0, Math.min(100, ((v - min) / span) * 100));
   return (
     <div className="relative mt-1.5 flex flex-col gap-[3px] tall:mt-3">
+      {band && (
+        <div
+          className="hatch-amber pointer-events-none absolute -top-[2px] -bottom-[2px] z-[5] rounded-[1px]"
+          style={{ left: `${pctOf(band.from)}%`, width: `${Math.max(0, pctOf(band.to) - pctOf(band.from))}%` }}
+          title={band.title}
+        />
+      )}
       <StackBar segments={now} min={min} max={max} />
       {showSim ? <StackBar segments={sim} min={min} max={max} sim /> : <div className="h-[5px] rounded-[2px] bg-[#0b0b0d] tall:h-[7px]" />}
       {markers.map((mk) => {
@@ -185,7 +197,7 @@ function Gauge({
       <div className="relative z-10 flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-1.5">
           <Led on color={statusColor} blink={alarm} />
-          <span className="font-display text-[10.5px] font-bold tracking-[0.12em] text-ink-2 tall:text-[12px]">{title}</span>
+          <span className="truncate font-display text-[10.5px] font-bold tracking-[0.12em] whitespace-nowrap text-ink-2 tall:text-[12px]">{title}</span>
         </div>
         {readout}
       </div>
@@ -230,6 +242,7 @@ export function SlaDashboard({
   onOpenKnowledge,
 }: SlaDashboardProps) {
   const { t, tx, en, fault: faultText } = useI18n();
+  const releaseWaves = predictWavesToRelease(now.m);
   /* Latency */
   const latMax = Math.max(sla.maxLatencyMs * 1.45, now.t.totalLatencyMs * 1.08, sim.t.totalLatencyMs * 1.08);
   const latSegs = (t: ComputedTelemetry): Segment[] => [
@@ -384,6 +397,14 @@ export function SlaDashboard({
               showSim={showSim}
               min={25}
               max={105}
+              band={{
+                from: now.t.thermalReleaseTempC,
+                to: now.m.throttleTempC,
+                title: tx(
+                  `热滞回带 ${fmt(now.t.thermalReleaseTempC, 0)}–${fmt(now.m.throttleTempC, 0)}°C：一旦锁频，需降回 ${fmt(now.t.thermalReleaseTempC, 0)}°C 才解锁`,
+                  `Hysteresis band ${fmt(now.t.thermalReleaseTempC, 0)}–${fmt(now.m.throttleTempC, 0)}°C: once throttled, must cool to ${fmt(now.t.thermalReleaseTempC, 0)}°C to unlock`,
+                ),
+              }}
               markers={[
                 { key: 'rel', at: now.t.thermalReleaseTempC, color: COLORS.scope },
                 { key: 'thr', at: now.m.throttleTempC, color: COLORS.amber },
@@ -398,7 +419,9 @@ export function SlaDashboard({
               <L color={COLORS.estop} label="OFF" value={`${fmt(now.m.shutdownTempC, 0)}°`} />
               <Status color={hot || (showSim && simHot) ? COLORS.estop : COLORS.mute}>
                 {hot
-                  ? tx(`锁频 ≤${fmt(now.t.thermalReleaseTempC, 0)}° 解锁`, `LOCKED ≤${fmt(now.t.thermalReleaseTempC, 0)}°`)
+                  ? releaseWaves < 0
+                    ? tx('锁频 · 需主动排热', 'LOCKED · needs active cooling')
+                    : tx(`锁频 · 约${releaseWaves}波解锁`, `LOCKED · ~${releaseWaves}W to unlock`)
                   : showSim && simHot
                     ? 'SIM→THROTTLE'
                     : 'NOMINAL'}

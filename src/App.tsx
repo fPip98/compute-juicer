@@ -14,6 +14,7 @@ import { RewardScreen } from './ui/components/RewardScreen';
 import { RunEndScreen } from './ui/components/RunEndScreen';
 import { RunMap } from './ui/components/RunMap';
 import { ShopScreen } from './ui/components/ShopScreen';
+import { hasOnboarded, OnboardingCoach } from './ui/components/OnboardingCoach';
 import { TopBar } from './ui/components/TopBar';
 import { useComputeGame } from './ui/useComputeGame';
 
@@ -82,6 +83,12 @@ export default function App() {
   const T = UI_TEXT[locale];
   const tx = (zh: string, en: string) => (locale === 'en' ? en : zh);
   const [deckOpen, setDeckOpen] = useState(false);
+  // 30s onboarding: auto-opens on the very first battle (localStorage flag), replayable via TopBar "?"
+  const [coachOpen, setCoachOpen] = useState(false);
+  useEffect(() => {
+    if (run.phase === 'BATTLE' && !hasOnboarded()) setCoachOpen(true);
+    if (run.phase !== 'BATTLE') setCoachOpen(false);
+  }, [run.phase]);
 
   const inBattle = run.phase === 'BATTLE' && !!battle && !!encounter && !!baseTelemetry && !!pipelinePreview && !!stagedPreview;
   const planning = battle?.status === 'PLANNING';
@@ -135,7 +142,7 @@ export default function App() {
         closeGdb();
         return;
       }
-      if (e.key === 'Enter' && run.phase === 'BATTLE' && !gdbOpen && !deckOpen && !isTypingTarget(e.target)) {
+      if (e.key === 'Enter' && run.phase === 'BATTLE' && !gdbOpen && !deckOpen && !coachOpen && !isTypingTarget(e.target)) {
         e.preventDefault();
         if (reportPending) setDismissedKey(null);
         else void handleCommit();
@@ -143,7 +150,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [gdbOpen, openGdb, closeGdb, handleCommit, reportPending, run.phase, deckOpen]);
+  }, [gdbOpen, openGdb, closeGdb, handleCommit, reportPending, run.phase, deckOpen, coachOpen]);
 
   // Close stray UI when the run changes phase
   useEffect(() => {
@@ -212,7 +219,7 @@ export default function App() {
       break;
     case 'RUN_VICTORY':
     case 'RUN_DEFEAT':
-      screen = <RunEndScreen run={run} onNewRun={restartRun} />;
+      screen = <RunEndScreen run={run} onNewRun={restartRun} onOpenKnowledge={openGdb} />;
       break;
   }
 
@@ -220,7 +227,7 @@ export default function App() {
     <LocaleProvider value={locale}>
       <div className="chassis-bg relative min-h-dvh desk:h-dvh desk:overflow-hidden" lang={locale === 'en' ? 'en' : 'zh-CN'}>
         {/* Game viewport: capped at 1440px so ultra-wide screens keep the same proportions */}
-        <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-2 p-2 desk:h-full">
+        <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-2 p-2 desk:h-full short:gap-1.5 short:p-1.5">
           <TopBar
             phase={run.phase}
             act={run.act}
@@ -241,6 +248,7 @@ export default function App() {
             onToggleLocale={toggleLocale}
             onShowReport={reopenReport}
             onToggleGdb={() => (gdbOpen ? closeGdb() : openGdb())}
+            onShowTutorial={() => setCoachOpen(true)}
             onOpenKnowledge={openGdb}
           />
 
@@ -293,6 +301,8 @@ export default function App() {
           onClose={closeGdb}
         />
 
+        <OnboardingCoach open={coachOpen && !gdbOpen} onClose={() => setCoachOpen(false)} />
+
         <DeckModal open={deckOpen} deckCardIds={run.deckCardIds} onClose={() => setDeckOpen(false)} onBook={(id) => openGdb(id)} />
 
         <AnimatePresence>
@@ -307,6 +317,10 @@ export default function App() {
               onProceed={proceedFromBattle}
               onNewRun={restartRun}
               onInspect={() => setDismissedKey(resultKey)}
+              onOpenKnowledge={(id) => {
+                setDismissedKey(resultKey);
+                openGdb(id);
+              }}
             />
           )}
         </AnimatePresence>

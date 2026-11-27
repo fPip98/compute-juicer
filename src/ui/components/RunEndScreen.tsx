@@ -1,4 +1,8 @@
 import { motion } from 'framer-motion';
+import { useMemo } from 'react';
+import { CARD_REGISTRY } from '../../data/cards';
+import { FAULT_REGISTRY } from '../../data/faults';
+import { diagnoseBattleFailure } from '../../engine/diagnose';
 import { RotateCcw, Skull, Trophy } from 'lucide-react';
 import { ReactNode } from 'react';
 import { ENCOUNTER_REGISTRY } from '../../data/encounters';
@@ -6,17 +10,30 @@ import { PROFILE_REGISTRY } from '../../data/profiles';
 import { RELIC_REGISTRY } from '../../data/relics';
 import { RunState } from '../../engine/types';
 import { useI18n } from './i18n';
+import { DiagnosisPanel } from './DiagnosisPanel';
 import { GradeStamp } from './JuiceGrade';
 import { cn, domainColor, DynIcon } from './primitives';
 import { ScreenFrame } from './ScreenFrame';
 
-export function RunEndScreen({ run, onNewRun }: { run: RunState; onNewRun: () => void }) {
+export function RunEndScreen({ run, onNewRun, onOpenKnowledge }: { run: RunState; onNewRun: () => void; onOpenKnowledge: (id: string) => void }) {
   const { t, tx, en, relic: relicText, encounter: encText } = useI18n();
   const win = run.phase === 'RUN_VICTORY';
   const profile = run.profileId ? PROFILE_REGISTRY[run.profileId] : undefined;
   const enc = run.activeEncounterId ? ENCOUNTER_REGISTRY[run.activeEncounterId] : undefined;
   const accent = win ? '#2cf07f' : '#ff2a2a';
   const cleared = run.nodes.filter((n) => n.visited).length;
+  const diagnosis = useMemo(
+    () => (!win && run.activeBattle && run.activeBattle.status === 'DEFEAT' ? diagnoseBattleFailure(run.activeBattle, CARD_REGISTRY, FAULT_REGISTRY) : null),
+    [win, run.activeBattle],
+  );
+  const stats = (
+    <div className={win ? 'grid grid-cols-2 gap-2 sm:grid-cols-4' : 'grid grid-cols-2 gap-2'}>
+      <Stat k={t('actLabel')} v={`${run.act}/3`} />
+      <Stat k={tx('胜场', 'WINS')} v={String(run.battlesWon)} />
+      <Stat k={tx('节点', 'NODES')} v={String(cleared)} />
+      <Stat k={t('credits')} v={String(run.credits)} accent="#ffb020" />
+    </div>
+  );
 
   return (
     <ScreenFrame
@@ -34,19 +51,19 @@ export function RunEndScreen({ run, onNewRun }: { run: RunState; onNewRun: () =>
           </button>
         </>
       }
-      bodyClassName="grid grid-cols-1 content-center gap-5 overflow-y-auto p-6 lg:grid-cols-[minmax(0,1fr)_360px] desk:overflow-visible"
+      bodyClassName="grid grid-cols-1 content-center gap-5 overflow-y-auto p-6 lg:grid-cols-[minmax(0,1fr)_300px] desk:overflow-visible short:gap-3 short:p-4"
     >
-      <div className="flex flex-col gap-4">
+      <div className="flex min-w-0 flex-col gap-4 short:gap-2.5">
         <motion.div
           initial={{ scale: 2, rotate: -20, opacity: 0 }}
           animate={{ scale: 1, rotate: -4, opacity: 1 }}
           transition={{ type: 'spring', stiffness: 260, damping: 14, delay: 0.15 }}
-          className="w-fit rounded-[12px] border-4 px-5 py-2 font-display text-[34px] leading-none font-black tracking-wider"
+          className={cn('w-fit rounded-[12px] border-4 px-5 py-2 font-display leading-none font-black tracking-wider', diagnosis ? 'text-[26px] short:text-[22px]' : 'text-[34px]')}
           style={{ color: accent, borderColor: accent, textShadow: `0 0 24px ${accent}88`, boxShadow: `0 0 40px -10px ${accent}` }}
         >
           {win ? 'FULL-STACK GRAND SLAM' : 'RUN TERMINATED'}
         </motion.div>
-        <p className="max-w-[640px] text-[14px] leading-relaxed text-ink-2">
+        <p className={cn('max-w-[640px] leading-relaxed text-ink-2', diagnosis ? 'line-clamp-2 text-[12.5px]' : 'text-[14px]')}>
           {win
             ? tx(
                 '从单板 Bring-up 到暴雨夜无风扇智驾，你榨干了每一个 FLOP、每一字节带宽和每一摄氏度的热余量。量产线签字放行，鸡蛋完好，四足没摔，车也没进沟。',
@@ -64,15 +81,11 @@ export function RunEndScreen({ run, onNewRun }: { run: RunState; onNewRun: () =>
             {run.activeBattle.defeatReason}
           </div>
         )}
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <Stat k={t('actLabel')} v={`${run.act}/3`} />
-          <Stat k={tx('胜场', 'WINS')} v={String(run.battlesWon)} />
-          <Stat k={tx('节点', 'NODES')} v={String(cleared)} />
-          <Stat k={t('credits')} v={String(run.credits)} accent="#ffb020" />
-        </div>
+        {diagnosis ? <DiagnosisPanel diagnosis={diagnosis} onOpenKnowledge={onOpenKnowledge} /> : stats}
       </div>
 
       <div className="flex flex-col gap-3">
+        {diagnosis && stats}
         <div className="flex items-center gap-3">
           <GradeStamp grade={run.lastGrade} caption={t('juiceGrade')} size="lg" />
           <div className="font-mono text-[11px] leading-relaxed text-mute">

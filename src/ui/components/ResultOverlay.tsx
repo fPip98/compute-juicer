@@ -1,7 +1,12 @@
 import { motion } from 'framer-motion';
 import { ArrowRight, Eye, Gift, RotateCcw, Trophy } from 'lucide-react';
+import { useMemo } from 'react';
+import { CARD_REGISTRY } from '../../data/cards';
+import { FAULT_REGISTRY } from '../../data/faults';
+import { diagnoseBattleFailure } from '../../engine/diagnose';
 import { BattleState, ComputedTelemetry, EncounterDef, JuiceGrade, RobotMood } from '../../engine/types';
 import { useI18n } from './i18n';
+import { DiagnosisPanel } from './DiagnosisPanel';
 import { GradeStamp } from './JuiceGrade';
 import { cn, COLORS, fmt } from './primitives';
 
@@ -17,6 +22,8 @@ interface ResultOverlayProps {
   onProceed: () => void;
   onNewRun: () => void;
   onInspect: () => void;
+  /** Opens a GDB entry (the overlay is dismissed first so the drawer is visible). */
+  onOpenKnowledge: (id: string) => void;
 }
 
 type Bilingual = { zh: string; en: string };
@@ -94,7 +101,7 @@ function guessCause(reason: string | undefined, mood: RobotMood): RobotMood {
   return mood;
 }
 
-export function ResultOverlay({ battle, encounter, telemetry, grade, isFinalBoss, onProceed, onNewRun, onInspect }: ResultOverlayProps) {
+export function ResultOverlay({ battle, encounter, telemetry, grade, isFinalBoss, onProceed, onNewRun, onInspect, onOpenKnowledge }: ResultOverlayProps) {
   const { t, tx, locale, encounter: encText } = useI18n();
   const L = (b: Bilingual) => b[locale];
   const win = battle.status === 'VICTORY';
@@ -102,6 +109,7 @@ export function ResultOverlay({ battle, encounter, telemetry, grade, isFinalBoss
   const accent = win ? COLORS.signal : COLORS.estop;
   const reportId = `${encounter.id.toUpperCase()}-W${battle.wave}-${battle.slaPasses}${battle.requiredSlaPasses}`;
   const encName = encText(encounter).name;
+  const diagnosis = useMemo(() => (win ? null : diagnoseBattleFailure(battle, CARD_REGISTRY, FAULT_REGISTRY)), [battle, win]);
 
   return (
     <motion.div
@@ -114,17 +122,18 @@ export function ResultOverlay({ battle, encounter, telemetry, grade, isFinalBoss
         initial={{ y: 30, scale: 0.96, opacity: 0 }}
         animate={{ y: 0, scale: 1, opacity: 1 }}
         transition={{ type: 'spring', stiffness: 220, damping: 22, delay: 0.1 }}
-        className="relative w-full max-w-[660px] overflow-hidden rounded-[16px] border border-[#2b2b30] bg-[#e9e7e1] text-[#141414] shadow-[0_40px_120px_-30px_rgba(0,0,0,1)]"
+        className={cn('relative flex max-h-[calc(100dvh-24px)] w-full flex-col overflow-hidden rounded-[16px]', win ? 'max-w-[660px]' : 'max-w-[780px]')}
+        style={{ border: '1px solid #2b2b30', background: '#e9e7e1', color: '#141414', boxShadow: '0 40px 120px -30px rgba(0,0,0,1)' }}
         role="dialog"
         aria-label={win ? t('victoryTitle') : t('defeatTitle')}
       >
         <div className={cn('h-2 w-full', win ? 'bg-signal' : 'hazard-estop hazard-anim')} />
-        <div className="flex items-start justify-between gap-4 border-b border-[#c9c7c0] px-6 pt-5 pb-4">
+        <div className={cn('flex shrink-0 items-start justify-between gap-4 border-b border-[#c9c7c0] px-6', win ? 'pt-5 pb-4' : 'pt-3.5 pb-3')}>
           <div className="min-w-0">
             <div className="font-mono text-[10px] font-bold tracking-[0.2em] text-[#6d6b66]">
               {win ? `FACTORY ACCEPTANCE TEST · ${t('victoryTitle')}` : `INCIDENT POST-MORTEM · ${t('defeatTitle')}`}
             </div>
-            <h2 className="mt-1 font-display text-[26px] leading-tight font-black">
+            <h2 className={cn('mt-1 font-display leading-tight font-black', win ? 'text-[26px]' : 'text-[21px]')}>
               {win ? tx('部署成功，鸡蛋完好。', 'Deployed. Egg intact.') : L(cause.title)}
             </h2>
             <div className="mt-1 text-[13px] text-[#4a4945]">{encName}</div>
@@ -151,7 +160,7 @@ export function ResultOverlay({ battle, encounter, telemetry, grade, isFinalBoss
           </div>
         </div>
 
-        <div className="px-6 py-4">
+        <div className={cn('scroll-thin min-h-0 overflow-y-auto px-6', win ? 'py-4' : 'py-3')}>
           <div className="grid grid-cols-2 gap-px overflow-hidden rounded-[8px] border border-[#c9c7c0] bg-[#c9c7c0] sm:grid-cols-4">
             <Metric label="E2E LATENCY" value={`${fmt(telemetry.totalLatencyMs, 2)}ms`} sub={`SLA ≤ ${fmt(battle.effectiveSlaTarget.maxLatencyMs)}`} ok={telemetry.totalLatencyMs <= battle.effectiveSlaTarget.maxLatencyMs} />
             <Metric label="ACCURACY" value={`${fmt(telemetry.accuracyClamped)}%`} sub={`SLA ≥ ${fmt(battle.effectiveSlaTarget.minAccuracy)}`} ok={telemetry.accuracyClamped >= battle.effectiveSlaTarget.minAccuracy} />
@@ -159,7 +168,7 @@ export function ResultOverlay({ battle, encounter, telemetry, grade, isFinalBoss
             <Metric label="JUNCTION" value={`${fmt(battle.baseMetrics.tempC)}°C`} sub={telemetry.isThermalThrottled ? 'THROTTLED' : 'NOMINAL'} ok={!telemetry.isThermalShutdown} />
           </div>
 
-          <div className="mt-3 grid grid-cols-3 gap-2 font-mono text-[11px]">
+          <div className={cn('grid grid-cols-3 gap-2 font-mono text-[11px]', win ? 'mt-3' : 'mt-2')}>
             <Kv k="SLA PASSES" v={`${battle.slaPasses}/${battle.requiredSlaPasses}`} />
             <Kv k="WAVES USED" v={`${battle.wave}/${battle.totalWaves}`} />
             <Kv k="STABILITY" v={`${battle.stability}/${battle.maxStability}`} />
@@ -182,21 +191,17 @@ export function ResultOverlay({ battle, encounter, telemetry, grade, isFinalBoss
               </p>
             </div>
           ) : (
-            <div className="mt-4 space-y-2 text-[13px] leading-relaxed text-[#2e2d2a]">
-              <p className="rounded-[6px] bg-[#d3d1ca] px-3 py-2 font-mono text-[11.5px]">
-                <span className="font-black text-[#d31616]">ROOT CAUSE ▸ </span>
+            <div className="mt-2.5 space-y-2.5 text-[13px] leading-relaxed text-[#2e2d2a]">
+              <p className="rounded-[6px] bg-[#d3d1ca] px-3 py-1.5 font-mono text-[11.5px]" title={L(cause.quip)}>
+                <span className="font-black text-[#d31616]">DEFEAT ▸ </span>
                 {battle.defeatReason ?? tx('未知错误', 'Unknown failure')}
               </p>
-              <p>{L(cause.quip)}</p>
-              <p className="text-[12px] text-[#5a5955]">
-                <b>ACTION ITEM: </b>
-                {L(cause.fix)}
-              </p>
+              {diagnosis && <DiagnosisPanel diagnosis={diagnosis} tone="paper" onOpenKnowledge={onOpenKnowledge} />}
             </div>
           )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 border-t border-[#c9c7c0] bg-[#dedcd5] px-6 py-4">
+        <div className={cn('flex shrink-0 flex-wrap items-center gap-2 border-t border-[#c9c7c0] bg-[#dedcd5] px-6', win ? 'py-4' : 'py-2.5')}>
           <span className="font-mono text-[9px] text-[#6d6b66]">REPORT #{reportId}</span>
           <div className="flex-1" />
           <button onClick={onInspect} className="keycap flex items-center gap-1.5 px-3 py-2 text-[12px] font-bold">
@@ -221,7 +226,7 @@ export function ResultOverlay({ battle, encounter, telemetry, grade, isFinalBoss
             <ArrowRight size={13} />
           </button>
         </div>
-        <div className="h-1" style={{ background: accent }} />
+        <div className="h-1 shrink-0" style={{ background: accent }} />
       </motion.div>
     </motion.div>
   );

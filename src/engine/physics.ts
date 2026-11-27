@@ -117,6 +117,24 @@ export function stepThermal(m: SystemMetrics): SystemMetrics {
   return next;
 }
 
+/**
+ * Simulates passive cooling waves via stepThermal to predict how many waves
+ * are needed to exit thermal throttling hysteresis (<= throttleTempC - 7°C).
+ * Returns 0 if not throttled, 1..8 if passive cooling will release it, or -1 if
+ * active cooling / power reduction is required because equilibrium >= releaseC.
+ */
+export function predictWavesToRelease(m: SystemMetrics, maxWaves = 8): number {
+  const tel = computeTelemetry(m);
+  if (!tel.isThermalThrottled) return 0;
+  let sim = cloneMetrics(m);
+  sim.thermalThrottled = true;
+  for (let w = 1; w <= maxWaves; w++) {
+    sim = stepThermal(sim);
+    if (!sim.thermalThrottled) return w;
+  }
+  return -1;
+}
+
 export function evaluateSla(
   telemetry: ComputedTelemetry,
   target: SlaTarget,

@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import { Lock } from 'lucide-react';
 import { ComputedTelemetry, Domain, RobotMood, SlaTarget, SystemMetrics } from '../../engine/types';
 import { useI18n } from './i18n';
 import { cn, COLORS, domainColor, fmt, fmtDelta, PanelHeader } from './primitives';
@@ -25,6 +26,8 @@ interface StageSpec {
   hintDomain: Domain;
   hintText: string;
   knowledgeId: string;
+  /** Hard incompressible floor (e.g. TCP HOL lock) drawn as a red hatched block. */
+  floorMs?: number;
 }
 
 const MOOD_BADGE: Record<
@@ -148,14 +151,15 @@ export function LatencyTimeline({
     },
     {
       key: 'net',
-      labelZh: activeM.flags['tcp_hol_locked'] ? 'NET 🔒≥7.5ms' : 'NET / 总线',
-      labelEn: activeM.flags['tcp_hol_locked'] ? 'NET 🔒≥7.5ms' : 'NET / BUS',
+      labelZh: activeM.flags['tcp_hol_locked'] ? 'NET ≥7.5ms' : 'NET / 总线',
+      labelEn: activeM.flags['tcp_hol_locked'] ? 'NET ≥7.5ms' : 'NET / BUS',
       color: activeM.flags['tcp_hol_locked'] ? COLORS.estop : '#10b981',
       nowMs: nowM.flags['tcp_hol_locked'] ? Math.max(7.5, Math.max(0, nowM.ioNetBusMs)) : Math.max(0, nowM.ioNetBusMs),
       simMs: simM.flags['tcp_hol_locked'] ? Math.max(7.5, Math.max(0, simM.ioNetBusMs)) : Math.max(0, simM.ioNetBusMs),
       hintDomain: 'NETWORK',
-      hintText: activeM.flags['tcp_hol_locked'] ? '🔒 NET' : 'NET/BUS',
+      hintText: activeM.flags['tcp_hol_locked'] ? 'LOCKED' : 'NET/BUS',
       knowledgeId: 'k_tcp_nodelay',
+      floorMs: activeM.flags['tcp_hol_locked'] ? 7.5 : undefined,
     },
   ];
 
@@ -186,7 +190,7 @@ export function LatencyTimeline({
   const overSla = activeT.totalLatencyMs > sla.maxLatencyMs;
 
   return (
-    <section className="panel flex min-h-0 flex-col">
+    <section data-tour="timeline" className="panel flex min-h-0 flex-col">
       <PanelHeader
         index="03"
         title={t('panelRobot')}
@@ -282,10 +286,11 @@ export function LatencyTimeline({
                     className="h-1.5 w-1.5 shrink-0 rounded-[2px]"
                     style={{ background: s.color }}
                   />
+                  {s.floorMs !== undefined && <Lock size={10} strokeWidth={2.6} className="shrink-0 text-estop" aria-label="locked" />}
                   <span
                     className={cn(
                       'truncate',
-                      isTop ? 'font-black text-ink' : 'text-ink-2',
+                      s.floorMs !== undefined ? 'font-black text-estop' : isTop ? 'font-black text-ink' : 'text-ink-2',
                     )}
                     title={en ? s.labelEn : s.labelZh}
                   >
@@ -299,6 +304,13 @@ export function LatencyTimeline({
                     <div
                       className="absolute inset-y-0 left-0 opacity-25"
                       style={{ width: `${barNowPct}%`, background: s.color }}
+                    />
+                  )}
+                  {s.floorMs !== undefined && (
+                    <div
+                      className="hatch-red absolute inset-y-0 left-0 z-10 border-r-2 border-estop"
+                      style={{ width: `${Math.min(100, (s.floorMs / maxStageVal) * 100)}%` }}
+                      title={tx(`TCP 队头阻塞硬下限 ${s.floorMs}ms：只能对症解除`, `TCP HOL hard floor ${s.floorMs}ms: must be cleared directly`)}
                     />
                   )}
                   <motion.div
@@ -346,6 +358,7 @@ export function LatencyTimeline({
                     `Open ${s.hintText} optimization datasheet (GDB)`,
                   )}
                 >
+                  {s.floorMs !== undefined && <Lock size={9} strokeWidth={2.6} className="mr-0.5" />}
                   {isTop ? `★ ${s.hintText}` : s.hintText}
                 </button>
               </div>

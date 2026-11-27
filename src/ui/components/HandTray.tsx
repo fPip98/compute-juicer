@@ -4,10 +4,15 @@ import { CARD_REGISTRY } from '../../data/cards';
 import { DOMAINS } from '../../data/domains';
 import { CardDef, CardInstance } from '../../engine/types';
 import { useI18n } from './i18n';
+import { RackAxisBadge, RackSlots } from './RackBadge';
 import { cn, COLORS, domainColor, DynIcon, PanelHeader, TypeBadge } from './primitives';
 
 interface HandTrayProps {
   hand: CardInstance[];
+  /** Mounted exclusive rack slots (for ⇄ / + axis badges on PATCH cards). */
+  rackSlots?: RackSlots;
+  /** Card ids that counter a telegraphed fault this wave → cyan breathing outline. */
+  counterCardIds?: Set<string>;
   cyclesRemaining: number;
   locked: boolean;
   /** True once the encounter is decided (victory/defeat). */
@@ -23,6 +28,8 @@ interface HandTrayProps {
 
 export function HandTray({
   hand,
+  rackSlots,
+  counterCardIds,
   cyclesRemaining,
   locked,
   ended = false,
@@ -53,7 +60,7 @@ export function HandTray({
         />
       </div>
       {/* Wide screens: labels live in the empty side gutters so the cards get the full height */}
-      <div className="pointer-events-none absolute top-3 bottom-3 left-3 hidden w-[118px] flex-col justify-between lg:flex">
+      <div className="pointer-events-none absolute top-3 bottom-3 left-3 hidden w-[118px] flex-col justify-between lg:flex max-xl:w-[84px]">
         <div>
           <div className="flex items-baseline gap-2">
             <span className="font-mono text-[10px] font-bold text-te">05</span>
@@ -71,12 +78,12 @@ export function HandTray({
           F5 · HALT
         </div>
       </div>
-      <div className="pointer-events-none absolute top-3 right-3 bottom-3 hidden w-[118px] flex-col items-end justify-end gap-1 lg:flex">
+      <div className="pointer-events-none absolute top-3 right-3 bottom-3 hidden w-[118px] flex-col items-end justify-end gap-1 lg:flex max-xl:w-[84px]">
         <Pile label="DRAW" n={drawCount} />
         <Pile label="DISCARD" n={discardCount} />
         <Pile label="EXHAUST" n={exhaustCount} />
       </div>
-      <div className="scroll-thin flex min-h-0 flex-1 items-end overflow-x-auto px-3 pt-[14px] pb-2 lg:px-[136px]" onMouseLeave={() => onHover(null)}>
+      <div className="scroll-thin flex min-h-0 flex-1 items-end overflow-x-auto px-3 pt-[14px] pb-2 lg:px-[136px] max-xl:lg:px-[96px]" onMouseLeave={() => onHover(null)}>
         <div className="relative mx-auto flex w-max items-end gap-2.5">
         <AnimatePresence initial={false} mode="popLayout">
           {hand.map((inst, i) => {
@@ -87,6 +94,8 @@ export function HandTray({
               <HandCard
                 key={inst.instanceId}
                 def={def}
+                rackSlots={rackSlots}
+                isCounter={!!counterCardIds?.has(def.id)}
                 tilt={(i - mid) * 0.5}
                 affordable={affordable}
                 locked={locked}
@@ -102,7 +111,7 @@ export function HandTray({
           })}
         </AnimatePresence>
           {hand.length === 0 && (
-            <div className="grid h-[188px] w-[420px] place-items-center rounded-xl border border-dashed border-line font-mono text-[11px] text-dim">
+            <div className="grid h-[188px] w-[420px] place-items-center short:h-[160px] rounded-xl border border-dashed border-line font-mono text-[11px] text-dim">
               {ended ? tx('战局已结束 · 查看战报或切换关卡', 'Encounter over · open the report or switch stage') : t('allStaged')}
             </div>
           )}
@@ -124,6 +133,8 @@ function Pile({ label, n }: { label: string; n: number }) {
 
 function HandCard({
   def,
+  rackSlots,
+  isCounter,
   tilt,
   affordable,
   locked,
@@ -134,6 +145,8 @@ function HandCard({
   onBook,
 }: {
   def: CardDef;
+  rackSlots?: RackSlots;
+  isCounter: boolean;
   tilt: number;
   affordable: boolean;
   locked: boolean;
@@ -171,7 +184,8 @@ function HandCard({
       tabIndex={0}
       aria-disabled={disabled}
       className={cn(
-        'group relative flex h-[188px] w-[160px] shrink-0 tall:h-[204px] tall:w-[170px] cursor-pointer flex-col overflow-hidden rounded-[12px] border text-left outline-none select-none',
+        'group relative flex h-[188px] w-[160px] shrink-0 tall:h-[204px] tall:w-[170px] short:h-[162px] short:w-[150px] cursor-pointer flex-col overflow-hidden rounded-[12px] border text-left outline-none select-none',
+        isCounter && 'counter-glow',
         'focus-visible:ring-2 focus-visible:ring-scope',
         disabled && 'cursor-not-allowed',
       )}
@@ -192,9 +206,18 @@ function HandCard({
         <span className="relative font-mono text-[10px] font-black tracking-wider text-[#0a0a0b]">
           {def.code}
         </span>
-        <span className="relative mr-8 truncate font-mono text-[9px] font-bold text-[#0a0a0b]/75">
-          {DOMAINS[def.domain].shortName}
-        </span>
+        {isCounter ? (
+          <span
+            className="relative mr-8 rounded-[3px] bg-[#04141c] px-1 font-mono text-[8.5px] leading-[13px] font-black tracking-wider text-scope"
+            title={tx('对症解牌：可化解本波预告的故障', 'Counter card: directly mitigates a telegraphed fault this wave')}
+          >
+            COUNTER
+          </span>
+        ) : (
+          <span className="relative mr-8 truncate font-mono text-[9px] font-bold text-[#0a0a0b]/75">
+            {DOMAINS[def.domain].shortName}
+          </span>
+        )}
       </div>
 
       {/* Cost keycap */}
@@ -220,14 +243,15 @@ function HandCard({
           {text.summary}
         </p>
         {text.orderHint && (
-          <p className="line-clamp-2 border-l-2 border-amber/60 pl-1.5 text-[9.5px] leading-[1.3] text-amber/90" title={text.orderHint}>
+          <p className="line-clamp-2 border-l-2 border-amber/60 pl-1.5 text-[9.5px] leading-[1.3] text-amber/90 short:line-clamp-1" title={text.orderHint}>
             {text.orderHint}
           </p>
         )}
         <div className="mt-auto flex items-end justify-between gap-1">
           <div className="flex min-w-0 flex-wrap gap-[3px]">
             <TypeBadge type={def.type} />
-            {def.tags.slice(0, 2).map((t) => (
+            {def.type === 'PATCH' && <RackAxisBadge def={def} rackSlots={rackSlots} />}
+            {def.tags.slice(0, def.type === 'PATCH' ? 1 : 2).map((t) => (
               <span
                 key={t}
                 className="rounded-[3px] border border-[#2e2e34] bg-black/40 px-1 font-mono text-[8.5px] font-bold"

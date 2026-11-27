@@ -5,6 +5,7 @@ import { CARD_REGISTRY } from '../../data/cards';
 import { DOMAINS } from '../../data/domains';
 import { RELIC_REGISTRY } from '../../data/relics';
 import { useI18n } from './i18n';
+import { RackAxisBadge } from './RackBadge';
 import { cn, domainColor, DynIcon, TypeBadge } from './primitives';
 
 /**
@@ -104,8 +105,9 @@ export function CardFace({
         <div className="mt-auto flex items-end justify-between gap-1">
           <div className="flex min-w-0 flex-wrap gap-[3px]">
             <TypeBadge type={def.type} />
+            {def.type === 'PATCH' && <RackAxisBadge def={def} />}
             {!sm &&
-              def.tags.slice(0, 2).map((t) => (
+              def.tags.slice(0, def.type === 'PATCH' ? 1 : 2).map((t) => (
                 <span key={t} className="rounded-[3px] border border-[#2e2e34] bg-black/40 px-1 font-mono text-[8.5px] font-bold text-ink-2">
                   {t}
                 </span>

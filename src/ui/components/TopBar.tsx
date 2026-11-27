@@ -31,6 +31,8 @@ interface TopBarProps {
   onToggleLocale: () => void;
   onShowReport: () => void;
   onToggleGdb: () => void;
+  /** Replays the 3-step onboarding coach (battle only). */
+  onShowTutorial?: () => void;
   onOpenKnowledge: (id: string) => void;
 }
 
@@ -54,6 +56,7 @@ export function TopBar({
   onToggleLocale,
   onShowReport,
   onToggleGdb,
+  onShowTutorial,
   onOpenKnowledge,
 }: TopBarProps) {
   const { t, tx, en, relic: relicText, encounter: encText } = useI18n();
@@ -64,7 +67,7 @@ export function TopBar({
   const hiddenRelics = relicIds.length - shownRelics.length;
 
   return (
-    <header className="panel flex shrink-0 flex-wrap items-center gap-x-2.5 gap-y-2 px-2 py-1.5 desk:h-[48px] desk:flex-nowrap">
+    <header className="panel flex shrink-0 flex-wrap items-center gap-x-2.5 gap-y-2 px-2 py-1.5 desk:h-[48px] desk:flex-nowrap short:h-[42px] short:py-1">
       {/* Brand plate */}
       <div className="flex shrink-0 items-center gap-2">
         <div className="relative grid h-8 w-8 place-items-center rounded-md bg-te text-chassis shadow-[0_0_16px_-4px_#ff4f00]">
@@ -297,7 +300,7 @@ export function TopBar({
       >
         <Led on={bgmEnabled && !muted} color={COLORS.signal} />
         <Music size={13} className={bgmEnabled && !muted ? 'text-ink' : 'text-mute'} />
-        BGM
+        <span className="max-xl:hidden">BGM</span>
       </button>
 
       {/* SFX / master mute */}
@@ -335,6 +338,19 @@ export function TopBar({
         </button>
       )}
 
+      {/* Onboarding replay */}
+      {inBattle && onShowTutorial && (
+        <button
+          onClick={onShowTutorial}
+          className="keycap grid h-8 w-8 shrink-0 place-items-center !rounded-[7px] font-display text-[14px] font-black text-scope"
+          title={tx('重看 30 秒新手引导', 'Replay the 30-second tutorial')}
+          aria-label={tx('重看新手引导', 'Replay tutorial')}
+          data-tour-replay
+        >
+          ?
+        </button>
+      )}
+
       {/* HALT / GDB breaker */}
       <button
         onClick={onToggleGdb}
@@ -345,7 +361,8 @@ export function TopBar({
         <span className="grid h-5 w-5 place-items-center rounded-full border-2 border-[#5e0000] bg-[#ff5a5a]">
           <span className={cn('h-1.5 w-1.5 rounded-full bg-[#2a0000]', gdbOpen && 'blink')} />
         </span>
-        <span className="font-display text-[12px] font-black tracking-wider whitespace-nowrap">HALT / GDB</span>
+        <span className="font-display text-[12px] font-black tracking-wider whitespace-nowrap max-xl:hidden">HALT / GDB</span>
+        <span className="font-display text-[12px] font-black tracking-wider whitespace-nowrap xl:hidden">GDB</span>
         <span className="rounded-[3px] bg-[#1a0000]/25 px-1 font-mono text-[9px] font-bold">F5</span>
       </button>
     </header>
@@ -355,7 +372,7 @@ export function TopBar({
 function Counter({ label, title, children }: { label: string; title: string; children: ReactNode }) {
   return (
     <div className="flex items-center gap-1.5" title={title}>
-      <span className="font-mono text-[8px] tracking-[0.16em] text-dim">{label}</span>
+      <span className="font-mono text-[8px] tracking-[0.16em] text-dim max-xl:hidden">{label}</span>
       {children}
     </div>
   );

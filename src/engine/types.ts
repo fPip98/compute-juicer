@@ -285,9 +285,45 @@ export interface BattleState {
 
   upcomingFaultIds: string[];      // Telegraphed faults for this wave
   lastTurnTrace: TraceEvent[];
+  /** Snapshot of the last committed turn for exact counterfactual root-cause diagnosis */
+  lastTurnSnapshot?: {
+    wave: number;
+    baseMetrics: SystemMetrics;
+    effectiveSlaTarget: SlaTarget;
+    rackSlots: Partial<Record<RackAxis, string>>;
+    handAndStaged: CardInstance[];
+    stagedPipeline: CardInstance[];
+    upcomingFaultIds: string[];
+  };
   robotMood: RobotMood;
   status: 'PLANNING' | 'VICTORY' | 'DEFEAT';
   defeatReason?: string;
+}
+
+export interface RootCauseItem {
+  id: string;
+  severity: 'CRITICAL' | 'WARNING';
+  titleZh: string;
+  titleEn: string;
+  detailZh: string;
+  detailEn: string;
+  knowledgeId: string;
+}
+
+export interface CounterfactualHint {
+  summaryZh: string;
+  summaryEn: string;
+  suggestedCardIds: string[];
+  actualLatencyMs: number;
+  whatIfLatencyMs: number;
+  actualAccuracy: number;
+  whatIfAccuracy: number;
+  wouldPassSla: boolean;
+}
+
+export interface FailureDiagnosis {
+  topCauses: RootCauseItem[];
+  counterfactual: CounterfactualHint | null;
 }
 
 export interface KnowledgeEntry {

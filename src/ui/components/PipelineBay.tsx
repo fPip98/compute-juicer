@@ -1,9 +1,9 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { BookOpen, ChevronLeft, ChevronRight, ChevronUp, CornerDownLeft, FileText, Gauge, Play, RotateCcw, Sparkles, Terminal, TriangleAlert, X, Zap } from 'lucide-react';
-import { ReactNode, useLayoutEffect, useRef, useState } from 'react';
+import { ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { CARD_REGISTRY } from '../../data/cards';
 import { DOMAINS } from '../../data/domains';
-import { RACK_AXES } from '../../engine/rack';
+import { getRackAxis, RACK_AXES } from '../../engine/rack';
 import {
   BattleState,
   CardInstance,
@@ -12,6 +12,7 @@ import {
   OpsActionId,
   PipelinePreviewResult,
   PipelineStepSnapshot,
+  RackAxis,
   TraceEvent,
   TraceEventKind,
 } from '../../engine/types';
@@ -82,10 +83,25 @@ export function PipelineBay({
   onOpenKnowledge,
 }: PipelineBayProps) {
   const { t, tx, card } = useI18n();
+  // OPS REBOOT two-step confirm: first click arms, second executes; auto-disarms after 3s / on wave change.
+  const [rebootArmed, setRebootArmed] = useState(false);
+  useEffect(() => {
+    if (!rebootArmed) return;
+    const id = window.setTimeout(() => setRebootArmed(false), 3000);
+    return () => window.clearTimeout(id);
+  }, [rebootArmed]);
+  useEffect(() => setRebootArmed(false), [battle.wave, battle.status]);
   const staged = battle.stagedPipeline;
   const planning = battle.status === 'PLANNING';
   const canCommit = planning && !isExecuting && stagedPreview.valid;
   const notices = hoveringHand ? hoverPreview : stagedPreview;
+  // Exclusive-rack preview: last staged/hovered PATCH targeting each axis (works for empty slots too)
+  const incomingByAxis = new Map<RackAxis, string>();
+  for (const st of notices.steps) {
+    const d = CARD_REGISTRY[st.cardId];
+    const ax = d ? getRackAxis(d) : undefined;
+    if (ax) incomingByAxis.set(ax, st.cardId);
+  }
   const emptySlots = Math.max(0, MIN_SLOTS - staged.length - (hoveringHand ? 1 : 0));
   const sla = stagedPreview.slaEval;
 
@@ -152,56 +168,51 @@ export function PipelineBay({
           {t('panelPipeline')}
         </span>
         <ComboMeter domains={comboDomains} overdrive={overdrive} overdriveSim={overdriveSim} />
-        {/* 6-Axis Exclusive Architecture Rack (replaces old PATCHES list with zero height increase) */}
-        <div className="scroll-thin ml-1 flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+        {/* 6-Axis Exclusive Architecture Rack — fixed 6-column grid: every axis always visible, never scrolls */}
+        <div className="ml-1 grid min-w-0 flex-1 grid-cols-6 gap-1" data-tour="rack">
           {RACK_AXES.map((slot) => {
             const mountedId = battle.rackSlots?.[slot.axis];
             const mountedDef = mountedId ? CARD_REGISTRY[mountedId] : undefined;
-            const replacement = notices.rackReplacements.find((r) => r.axis === slot.axis);
-            const incomingDef = replacement ? CARD_REGISTRY[replacement.toCardId] : undefined;
-            const c = incomingDef
-              ? COLORS.amber
-              : mountedDef
-                ? domainColor(mountedDef.domain)
-                : '#3a3a40';
-            const mountedName = mountedDef ? card(mountedDef).name : slot.defaultLabel;
+            const incomingId = incomingByAxis.get(slot.axis);
+            const incomingDef = incomingId && incomingId !== mountedId ? CARD_REGISTRY[incomingId] : undefined;
+            const mode: 'swap' | 'new' | null = incomingDef ? (mountedDef ? 'swap' : 'new') : null;
+            const c = mode === 'swap' ? COLORS.amber : mode === 'new' ? COLORS.signal : mountedDef ? domainColor(mountedDef.domain) : '#3a3a40';
+            const lit = !!mountedDef || !!mode;
+            const codeText = mode && incomingDef ? `${mode === 'swap' ? '⇄' : '+'}${incomingDef.code}` : mountedDef ? mountedDef.code : slot.defaultLabel;
             return (
               <button
                 key={slot.axis}
-                onClick={() => mountedDef && onOpenKnowledge(mountedDef.knowledgeId)}
-                disabled={!mountedDef}
+                data-rack-axis={slot.axis}
+                data-rack-mode={mode ?? (mountedDef ? 'mounted' : 'empty')}
+                onClick={() => (incomingDef ?? mountedDef) && onOpenKnowledge((incomingDef ?? mountedDef)!.knowledgeId)}
                 title={
-                  replacement && incomingDef && mountedDef
+                  mode === 'swap' && incomingDef && mountedDef
                     ? tx(
-                        `互斥槽 [${slot.labelZh}] 替换：${card(mountedDef).name} ⇄ ${card(incomingDef).name}`,
-                        `Exclusive slot [${slot.labelEn}] replace: ${card(mountedDef).name} ⇄ ${card(incomingDef).name}`,
+                        `互斥槽 [${slot.labelZh}] 将替换：${card(mountedDef).name} ⇄ ${card(incomingDef).name}`,
+                        `Exclusive slot [${slot.labelEn}] will replace: ${card(mountedDef).name} ⇄ ${card(incomingDef).name}`,
                       )
-                    : mountedDef
-                      ? `[${slot.labelZh}] ${mountedName}: ${card(mountedDef).summary}`
-                      : tx(
-                          `互斥槽 [${slot.labelZh}]：当前默认 ${slot.defaultLabel}（装入同轴 PATCH 自动替换）`,
-                          `Exclusive slot [${slot.labelEn}]: default ${slot.defaultLabel}`,
-                        )
+                    : mode === 'new' && incomingDef
+                      ? tx(`互斥槽 [${slot.labelZh}] 将装入：${card(incomingDef).name}（替代默认 ${slot.defaultLabel}）`, `Exclusive slot [${slot.labelEn}] will mount: ${card(incomingDef).name} (over default ${slot.defaultLabel})`)
+                      : mountedDef
+                        ? `[${slot.labelZh}] ${card(mountedDef).name}: ${card(mountedDef).summary}`
+                        : tx(`互斥槽 [${slot.labelZh}]：当前默认 ${slot.defaultLabel}（装入同轴 PATCH 自动替换）`, `Exclusive slot [${slot.labelEn}]: default ${slot.defaultLabel}`)
                 }
                 className={cn(
-                  'flex shrink-0 items-center gap-1 rounded-[4px] border px-1.5 py-[1px] font-mono text-[9px] font-bold transition',
-                  mountedDef ? 'cursor-pointer hover:brightness-125' : 'cursor-default opacity-65',
-                  replacement && 'ring-1 ring-amber',
+                  'flex h-[22px] min-w-0 items-center justify-center gap-1 overflow-hidden rounded-[4px] border px-1 font-mono text-[9px] leading-none font-bold transition',
+                  lit ? 'cursor-pointer hover:brightness-125' : 'cursor-default',
+                  mode && 'ring-1 blink-soft',
+                  mode === 'swap' && 'ring-amber',
+                  mode === 'new' && 'ring-signal',
                 )}
                 style={{
-                  borderColor: mountedDef || replacement ? `${c}77` : '#26262b',
-                  background: mountedDef || replacement ? `${c}16` : 'rgba(0,0,0,0.4)',
-                  color: mountedDef || replacement ? c : '#6a6a72',
+                  borderColor: lit ? `${c}88` : '#2a2a30',
+                  background: lit ? `${c}18` : 'rgba(0,0,0,0.45)',
+                  color: lit ? c : '#8a8a92',
                 }}
               >
-                <span className="text-[8px] opacity-75">{tx(slot.labelZh, slot.labelEn)}</span>
-                <span>
-                  {replacement && incomingDef
-                    ? `⇄${incomingDef.code}`
-                    : mountedDef
-                      ? mountedDef.code
-                      : slot.defaultLabel}
-                </span>
+                <span className="shrink-0 text-[9px] opacity-80 max-xl:hidden">{tx(slot.labelZh, slot.labelEn)}</span>
+                <span className="shrink-0 text-[9px] opacity-80 xl:hidden">{slot.labelEn.slice(0, 1)}</span>
+                <span className="truncate">{codeText}</span>
               </button>
             );
           })}
@@ -367,11 +378,11 @@ export function PipelineBay({
         {/* Commit row: SLA lamps + dmesg ticker | grade | BENCHMARK (or report key once the battle is over) */}
         <div className="flex shrink-0 items-center gap-2.5">
           <div className="flex min-w-0 flex-1 flex-col gap-1">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-[10px]">
+            <div className="flex min-w-0 flex-nowrap items-center gap-x-3 overflow-hidden font-mono text-[10px] whitespace-nowrap max-xl:gap-x-2 max-xl:text-[9.5px]">
               <SlaLamp ok={sla.latencyMet} label={`LAT ${fmt(stagedPreview.finalTelemetry.totalLatencyMs, 2)}/${fmt(stagedPreview.effectiveSlaTarget.maxLatencyMs)}ms`} />
-              <SlaLamp ok={sla.accuracyMet} label={`ACC ${fmt(stagedPreview.finalTelemetry.accuracyClamped)}/${fmt(stagedPreview.effectiveSlaTarget.minAccuracy)}%`} />
+              <SlaLamp ok={sla.accuracyMet} label={`ACC ${fmt(stagedPreview.finalTelemetry.accuracyClamped)}/${fmt(stagedPreview.effectiveSlaTarget.minAccuracy, 0)}%`} />
               <SlaLamp ok={sla.ramSafe} label={`RAM ${fmt(stagedPreview.finalTelemetry.ramPercent)}%`} />
-              <SlaLamp ok={sla.thermalSafe} label={`T ${fmt(stagedPreview.finalMetrics.tempC)}°C`} />
+              <SlaLamp ok={sla.thermalSafe} label={`T ${fmt(stagedPreview.finalMetrics.tempC, 0)}°C`} />
             </div>
             <TraceTicker trace={battle.lastTurnTrace} wave={battle.wave} />
           </div>
@@ -381,29 +392,61 @@ export function PipelineBay({
                 disabled={isExecuting || battle.opsUsedThisWave !== null}
                 onClick={() => onOpsAction('THROTTLE_DEGRADE')}
                 data-pressed={battle.opsUsedThisWave === 'THROTTLE_DEGRADE'}
+                data-ops="degrade"
                 className={cn(
-                  'keycap flex h-[42px] flex-col items-center justify-center px-2 font-mono text-[9px] font-bold leading-tight',
+                  'keycap flex h-[42px] w-[58px] flex-col items-center justify-center gap-[2px] px-1 font-mono leading-none',
                   battle.opsUsedThisWave === 'THROTTLE_DEGRADE' ? 'border-amber text-amber' : 'text-ink-2',
                 )}
                 title={tx(
-                  'OPS 应急限流降级（0 预算）：本波次延迟 -3.5ms，但精度 -5.0%',
-                  'OPS Throttle Degrade (0 Cycles): -3.5ms latency this wave, -5.0% accuracy',
+                  'OPS 应急限流降级（0 预算，每波限 1 次 OPS）：本波次延迟 -3.5ms，但精度 -5.0%',
+                  'OPS Throttle Degrade (0 Cycles, 1 OPS per wave): -3.5ms latency this wave, -5.0% accuracy',
                 )}
               >
-                <Gauge size={12} className="mb-0.5 text-amber" />
-                <span>{tx('限流', 'DEGRADE')}</span>
+                <span className="flex items-center gap-1 text-[10px] font-black">
+                  <Gauge size={11} className="text-amber" />
+                  {tx('限流', 'DEGRD')}
+                </span>
+                <span className="text-[8.5px] font-bold text-amber">−5%ACC</span>
               </button>
               <button
                 disabled={isExecuting || battle.opsUsedThisWave !== null}
-                onClick={() => onOpsAction('RESTART_SERVICE')}
-                className="keycap flex h-[42px] flex-col items-center justify-center px-2 font-mono text-[9px] font-bold leading-tight text-ink-2 hover:text-estop"
+                onClick={() => {
+                  if (rebootArmed) {
+                    setRebootArmed(false);
+                    onOpsAction('RESTART_SERVICE');
+                  } else {
+                    setRebootArmed(true);
+                  }
+                }}
+                onBlur={() => setRebootArmed(false)}
+                data-ops="reboot"
+                data-armed={rebootArmed}
+                className={cn(
+                  'keycap flex h-[42px] flex-col items-center justify-center gap-[2px] px-1 font-mono leading-none transition-[width]',
+                  rebootArmed ? 'keycap-estop w-[92px]' : 'w-[58px] text-ink-2',
+                )}
                 title={tx(
-                  'OPS 紧急重启服务：立刻清空内存泄漏/碎片、解除 TCP 锁死并降温 -18°C（解除热滞回），代价是本波 SLA 直接判负（稳定性 -1）',
-                  'OPS Restart Service: purge RAM leaks/frag, clear TCP lock & cool -18°C (breaks thermal hysteresis), at the cost of failing this wave SLA (-1 stability)',
+                  'OPS 紧急重启服务（两段确认）：清空内存泄漏/碎片、解除 TCP 锁死并降温 -18°C（解除热滞回），代价是本波 SLA 直接判负（稳定性 -1）',
+                  'OPS Restart Service (click twice): purge RAM leaks/frag, clear TCP lock & cool -18°C (breaks thermal hysteresis), at the cost of failing this wave SLA (-1 stability)',
                 )}
               >
-                <RotateCcw size={12} className="mb-0.5 text-estop" />
-                <span>{tx('重启', 'REBOOT')}</span>
+                {rebootArmed ? (
+                  <>
+                    <span className="flex items-center gap-1 text-[10px] font-black">
+                      <RotateCcw size={11} />
+                      {tx('确认重启?', 'CONFIRM?')}
+                    </span>
+                    <span className="text-[8.5px] font-black">{tx('−1 稳定 · 判负', 'STAB−1 · FAIL')}</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="flex items-center gap-1 text-[10px] font-black">
+                      <RotateCcw size={11} className="text-estop" />
+                      {tx('重启', 'REBOOT')}
+                    </span>
+                    <span className="text-[8.5px] font-bold text-estop">STAB−1</span>
+                  </>
+                )}
               </button>
             </div>
           )}
@@ -415,7 +458,7 @@ export function PipelineBay({
               whileTap={{ scale: 0.98 }}
               onClick={onShowReport}
               className={cn(
-                'keycap flex h-[42px] min-w-[210px] shrink-0 items-center justify-between gap-3 px-3.5',
+                'keycap flex h-[42px] min-w-[210px] shrink-0 items-center justify-between gap-3 px-3.5 max-xl:min-w-[156px] max-xl:gap-2 max-xl:px-2.5',
                 reportPending === 'VICTORY' ? 'keycap-te' : 'keycap-estop',
               )}
               title={reportPending === 'VICTORY' ? t('viewVictoryReport') : t('viewDefeatReport')}
@@ -433,7 +476,7 @@ export function PipelineBay({
                   </span>
                 </span>
               </span>
-              <span className="flex items-center gap-1 rounded-[4px] bg-black/20 px-1.5 py-1 font-mono text-[9px] font-bold">
+              <span className="flex items-center gap-1 rounded-[4px] bg-black/20 px-1.5 py-1 font-mono text-[9px] font-bold max-xl:hidden">
                 <CornerDownLeft size={10} /> ENTER
               </span>
             </motion.button>
@@ -443,7 +486,7 @@ export function PipelineBay({
               disabled={!canCommit}
               onClick={onCommit}
               data-pressed={isExecuting}
-              className="keycap keycap-te flex h-[42px] min-w-[210px] shrink-0 items-center justify-between gap-3 px-3.5"
+              className="keycap keycap-te flex h-[42px] min-w-[210px] shrink-0 items-center justify-between gap-3 px-3.5 max-xl:min-w-[156px] max-xl:gap-2 max-xl:px-2.5"
               title={tx('执行流水线并结算本波次 (Enter)', 'Execute the pipeline and settle this wave (Enter)')}
             >
               <span className="flex items-center gap-2">
@@ -457,7 +500,7 @@ export function PipelineBay({
                   </span>
                 </span>
               </span>
-              <span className="flex items-center gap-1 rounded-[4px] bg-[#120500]/20 px-1.5 py-1 font-mono text-[9px] font-bold">
+              <span className="flex items-center gap-1 rounded-[4px] bg-[#120500]/20 px-1.5 py-1 font-mono text-[9px] font-bold max-xl:hidden">
                 <CornerDownLeft size={10} /> ENTER
               </span>
             </motion.button>
@@ -483,7 +526,7 @@ function ComboMeter({ domains, overdrive, overdriveSim }: { domains: Domain[]; o
         `Full-stack chain: stage 3+ distinct domains for FULL-STACK OVERDRIVE (BW/FLOPS ×1.12, +1 draw next wave). Linked: ${domains.map((d) => DOMAINS[d].shortName).join(' + ') || 'none'}`,
       )}
     >
-      <span className="font-mono text-[8px] tracking-[0.14em] text-dim">CHAIN</span>
+      <span className="font-mono text-[8px] tracking-[0.14em] text-dim max-xl:hidden">CHAIN</span>
       <div className="flex gap-[3px]">
         {Array.from({ length: OVERDRIVE_DOMAINS }).map((_, i) => {
           const d = domains[i];
@@ -523,7 +566,8 @@ function CycleMeter({ battle, preview }: { battle: BattleState; preview: Pipelin
   const avail = preview.cyclesRemaining + used; // includes refunds
   return (
     <div className="flex shrink-0 items-center gap-1.5" title={`${t('cycles')} — ${t('cyclesTip')}`}>
-      <span className="silk whitespace-nowrap">{t('cycles')}</span>
+      <span className="silk whitespace-nowrap max-xl:hidden">{t('cycles')}</span>
+      <span className="silk whitespace-nowrap xl:hidden">{t('cyclesShort')}</span>
       <div className="flex gap-1">
         {Array.from({ length: Math.max(max, avail) }).map((_, i) => {
           const spent = i < used;
@@ -767,7 +811,7 @@ function Notice({ kind, text }: { kind: 'synergy' | 'overdrive' | 'warning' | 'e
 
 function SlaLamp({ ok, label }: { ok: boolean; label: string }) {
   return (
-    <span className={cn('tnum flex items-center gap-1.5', ok ? 'text-ink-2' : 'text-estop')}>
+    <span className={cn('tnum flex shrink-0 items-center gap-1.5 max-xl:gap-1', ok ? 'text-ink-2' : 'text-estop')}>
       <Led on color={ok ? COLORS.signal : COLORS.estop} />
       {label}
     </span>

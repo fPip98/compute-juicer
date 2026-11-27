@@ -16,7 +16,7 @@ export type FaultRegistry = Record<string, FaultDef>;
 const HAND_SIZE = 5;
 
 /** Counter cards guaranteed to be surfaced if present in drawPile when matching fault is telegraphed */
-const FAULT_COUNTERS: Record<string, string[]> = {
+export const FAULT_COUNTERS: Record<string, string[]> = {
   fault_tcp_hol: ['net_tcp_nodelay', 'net_udp_fec', 'net_iceoryx_shm', 'net_xdp_bypass'],
   fault_thermal_wave: ['sil_pwm_fan', 'sil_clock_gating', 'sil_liquid_metal'],
   fault_mem_frag_leak: ['ker_cgroup_reclaim', 'cpp_arena_pool'],
@@ -386,6 +386,15 @@ export function commitTurn(
     exhaustPile: newExhaust,
     upcomingFaultIds,
     lastTurnTrace: trace,
+    lastTurnSnapshot: {
+      wave: state.wave,
+      baseMetrics: cloneMetrics(state.baseMetrics),
+      effectiveSlaTarget: { ...state.effectiveSlaTarget },
+      rackSlots: { ...state.rackSlots },
+      handAndStaged: [...state.stagedPipeline, ...state.hand],
+      stagedPipeline: [...state.stagedPipeline],
+      upcomingFaultIds: [...state.upcomingFaultIds],
+    },
     robotMood: status === 'VICTORY' ? 'VICTORY' : slaEval.robotMood,
     status,
     defeatReason,

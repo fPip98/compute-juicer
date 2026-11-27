@@ -5,8 +5,9 @@ import { FAULT_LIST, FAULT_REGISTRY } from '../data/faults';
 import { RELIC_LIST, RELIC_REGISTRY } from '../data/relics';
 import { KNOWLEDGE_BASE } from '../gdb/knowledgeBase';
 import { EN_CARD_META, EN_ENCOUNTER_META, EN_FAULT_META, EN_RELIC_META } from '../i18n';
-import { applyOpsAction, commitTurn, createCardInstance, initBattle, reorderStagedCard, stageCard } from './battle';
-import { computeTelemetry, evaluateSla, stepThermal } from './physics';
+import { applyOpsAction, commitTurn, createCardInstance, FAULT_COUNTERS, initBattle, reorderStagedCard, stageCard } from './battle';
+import { diagnoseBattleFailure } from './diagnose';
+import { computeTelemetry, evaluateSla, predictWavesToRelease, stepThermal } from './physics';
 import { evaluatePipeline } from './pipeline';
 
 describe('Compute Juicer Physics Engine', () => {
@@ -190,6 +191,29 @@ describe('Battle State Machine, Watchdog & Content Integrity', () => {
     expect(rebooted.baseMetrics.thermalThrottled).toBe(false);
     expect(rebooted.baseMetrics.flags['tcp_hol_locked']).toBe(false);
     expect(rebooted.baseMetrics.tempC).toBeLessThanOrEqual(72);
+  });
+
+  it('predicts thermal release waves and generates counterfactual root-cause diagnosis', () => {
+    const enc = ACT1_ENCOUNTERS[0];
+    // At 86°C with low power (10W) and good cooling, passive cooling releases within 1..8 waves
+    const waves = predictWavesToRelease({ ...enc.baseMetrics, tempC: 86, powerW: 10, coolingFactor: 1.5, thermalThrottled: true });
+    expect(waves).toBeGreaterThan(0);
+    // At 90°C with huge power (45W), passive cooling can never release -> -1
+    expect(predictWavesToRelease({ ...enc.baseMetrics, tempC: 90, powerW: 45, coolingFactor: 0.7, thermalThrottled: true })).toBe(-1);
+
+    // Exported FAULT_COUNTERS covers TCP HOL
+    expect(FAULT_COUNTERS['fault_tcp_hol']).toContain('net_tcp_nodelay');
+
+    // Counterfactual diagnosis: player plays INT4 before QAT (wrong order / misses SLA),
+    // diagnosis finds a better play from the held cards!
+    let state = initBattle(enc, ['dep_int4_awq', 'dep_qat_calib', 'dep_flash_fusion', 'sil_dvfs_turbo', 'ker_v4l2_dmabuf'], [], RELIC_REGISTRY, () => 0.5);
+    const dvfs = state.hand.find((c) => c.cardId === 'sil_dvfs_turbo')!;
+    state = stageCard(state, dvfs.instanceId); // Anti-pattern: overclock while Memory-Bound!
+    const after = commitTurn(state, enc, CARD_REGISTRY, FAULT_REGISTRY, RELIC_REGISTRY, () => 0.5);
+    const diag = diagnoseBattleFailure(after, CARD_REGISTRY, FAULT_REGISTRY);
+    expect(diag.topCauses.length).toBeGreaterThan(0);
+    expect(diag.counterfactual).not.toBeNull();
+    expect(diag.counterfactual!.whatIfLatencyMs).toBeLessThan(diag.counterfactual!.actualLatencyMs);
   });
 
   it('ensures every card, relic, fault, and encounter has valid L1 KnowledgeEntry & EN i18n coverage', () => {

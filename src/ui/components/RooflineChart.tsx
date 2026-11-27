@@ -86,7 +86,7 @@ export function RooflineChart({ nowM, nowT, simM, simT, steps, showSim, activeSt
   const simRoofD = roofPath(simRoof);
 
   return (
-    <section className="panel flex min-h-0 flex-col">
+    <section data-tour="roofline" className="panel flex min-h-0 flex-col">
       <PanelHeader
         index="02"
         title={t('panelRoofline')}
@@ -99,17 +99,18 @@ export function RooflineChart({ nowM, nowT, simM, simT, steps, showSim, activeSt
               animate={{ y: 0, opacity: 1, scale: 1 }}
               exit={{ y: 8, opacity: 0 }}
               className={cn(
-                'flex items-center gap-1.5 rounded-[5px] border px-2 py-[2px] font-mono text-[10px] font-black tracking-wider',
+                'flex shrink-0 items-center gap-1.5 rounded-[5px] border px-2 py-[2px] font-mono text-[10px] font-black tracking-wider whitespace-nowrap max-xl:px-1.5 max-xl:text-[9.5px]',
                 isMem ? 'border-scope/50 bg-scope/10 text-scope glow-scope' : 'border-te/60 bg-te/10 text-te glow-te',
               )}
             >
               {boundFlip && <span className="text-[9px] text-ink-2">{nowPt.bound === 'MEMORY_BOUND' ? 'MEM' : 'CMP'} →</span>}
-              {isMem ? 'MEMORY-BOUND' : 'COMPUTE-BOUND'}
+              <span className="max-xl:hidden">{isMem ? 'MEMORY-BOUND' : 'COMPUTE-BOUND'}</span>
+              <span className="xl:hidden">{isMem ? 'MEM-B' : 'CMP-B'}</span>
             </motion.span>
           </AnimatePresence>
         }
       />
-      <div className="oled mx-2 mb-2 flex min-h-[150px] flex-1 flex-row">
+      <div className="oled mx-2 mb-2 flex min-h-[150px] flex-1 flex-row short:min-h-[108px]">
         <div ref={plotRef} className="relative min-h-0 min-w-0 flex-1">
           <AnimatePresence>
             {flashKey > 0 && (
@@ -295,7 +296,7 @@ export function RooflineChart({ nowM, nowT, simM, simT, steps, showSim, activeSt
         </svg>
         </div>
 
-        <div className="relative z-10 flex w-[100px] shrink-0 flex-col gap-px border-l border-[#15161a] bg-[#15161a] font-mono text-[9px]">
+        <div className="relative z-10 flex w-[100px] shrink-0 flex-col max-xl:w-[84px] gap-px border-l border-[#15161a] bg-[#15161a] font-mono text-[9px]">
           <Stat label="AI" now={nowT.arithmeticIntensity} sim={simT.arithmeticIntensity} showSim={showSim} unit="F/B" />
           <Stat label="RIDGE" now={nowT.ridgePoint} sim={simT.ridgePoint} showSim={showSim} unit="F/B" />
           <Stat label="PEAK" now={nowT.effectivePeakFlopsG} sim={simT.effectivePeakFlopsG} showSim={showSim} unit="G" digits={0} warn={nowT.isThermalThrottled} />
